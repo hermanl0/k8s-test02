@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AKS Lab — Platform Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg:       #0d1117;
+      --surface:  #161b22;
+      --border:   #30363d;
+      --green:    #3fb950;
+      --blue:     #58a6ff;
+      --purple:   #a371f7;
+      --orange:   #f0883e;
+      --text:     #c9d1d9;
+      --muted:    #8b949e;
+      --radius:   8px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 2rem 1rem;
+    }
+    .container { max-width: 1100px; margin: 0 auto; }
+
+    /* Header */
+    header { margin-bottom: 2.5rem; border-bottom: 1px solid var(--border); padding-bottom: 1.5rem; }
+    header h1 { font-size: 1.6rem; font-weight: 600; color: #fff; }
+    header p { color: var(--muted); margin-top: .3rem; font-size: .95rem; }
+    .badge {
+      display: inline-flex; align-items: center; gap: .35rem;
+      background: #1c2128; border: 1px solid var(--border);
+      border-radius: 20px; padding: .2rem .75rem; font-size: .8rem;
+      margin-top: .75rem; margin-right: .4rem; color: var(--muted);
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .dot.green { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .dot.blue  { background: var(--blue); }
+
+    /* Grid */
+    .grid { display: grid; gap: 1rem; }
+    .grid-3 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .grid-2 { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+
+    /* Card */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.5rem;
+    }
+    .card h2 {
+      font-size: .75rem; font-weight: 600; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 1rem;
+    }
+
+    /* Stat cards */
+    .stat { text-align: center; }
+    .stat .number { font-size: 2.4rem; font-weight: 700; color: #fff; }
+    .stat .label  { font-size: .8rem; color: var(--muted); margin-top: .2rem; }
+    .stat .sub    { font-size: .75rem; color: var(--green); margin-top: .15rem; }
+
+    /* Status table */
+    .status-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: .55rem 0; border-bottom: 1px solid var(--border); font-size: .875rem;
+    }
+    .status-row:last-child { border-bottom: none; }
+    .status-row .name { font-weight: 500; color: #fff; }
+    .status-row .meta { color: var(--muted); font-size: .8rem; margin-top: .1rem; }
+    .pill {
+      padding: .15rem .6rem; border-radius: 20px; font-size: .75rem; font-weight: 600;
+    }
+    .pill.running  { background: rgba(63,185,80,.15); color: var(--green); }
+    .pill.ready    { background: rgba(88,166,255,.15); color: var(--blue); }
+    .pill.bound    { background: rgba(163,113,247,.15); color: var(--purple); }
+    .pill.internal { background: rgba(48,54,61,.6);    color: var(--muted); }
+
+    /* Nodes */
+    .node-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+    .node-card {
+      background: #0d1117; border: 1px solid var(--border);
+      border-radius: 6px; padding: .85rem 1rem;
+    }
+    .node-card .node-name { font-size: .8rem; color: var(--blue); font-family: monospace; word-break: break-all; }
+    .node-card .node-info { font-size: .75rem; color: var(--muted); margin-top: .35rem; }
+
+    /* Diagram */
+    .diagram-card { margin-top: 1rem; }
+    .mermaid { background: transparent !important; }
+
+    /* Security */
+    .sec-item {
+      display: flex; gap: .75rem; align-items: flex-start;
+      padding: .6rem 0; border-bottom: 1px solid var(--border); font-size: .875rem;
+    }
+    .sec-item:last-child { border-bottom: none; }
+    .sec-icon { font-size: 1rem; flex-shrink: 0; margin-top: .1rem; }
+    .sec-label { font-weight: 500; color: #fff; }
+    .sec-desc  { color: var(--muted); font-size: .8rem; margin-top: .1rem; }
+
+    /* Stack */
+    .stack-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: .55rem 0; border-bottom: 1px solid var(--border); font-size: .875rem;
+    }
+    .stack-item:last-child { border-bottom: none; }
+    .stack-item .tech { font-weight: 500; color: #fff; }
+    .stack-item .ver  { font-family: monospace; font-size: .8rem; color: var(--orange); }
+
+    /* Footer */
+    footer { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--border);
+      font-size: .8rem; color: var(--muted); text-align: center; }
+    footer a { color: var(--blue); text-decoration: none; }
+
+    section { margin-bottom: 1.5rem; }
+    section > h2 { font-size: .85rem; font-weight: 600; letter-spacing: .06em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: .75rem; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <header>
+    <h1>AKS Lab &mdash; Platform Dashboard</h1>
+    <p>Personal cloud lab running on Azure Kubernetes Service (AKS), West Europe</p>
+    <div style="margin-top:.75rem">
+      <span class="badge"><span class="dot green"></span>Cluster Running</span>
+      <span class="badge"><span class="dot blue"></span>Kubernetes 1.34.7</span>
+      <span class="badge"><span class="dot blue"></span>Azure West Europe</span>
+      <span class="badge"><span class="dot blue"></span>RHEL 9 / Ubuntu 22.04</span>
+    </div>
+  </header>
+
+  <!-- Stat summary -->
+  <section>
+    <div class="grid grid-3">
+      <div class="card stat">
+        <div class="number">2</div>
+        <div class="label">Worker Nodes</div>
+        <div class="sub">All Ready</div>
+      </div>
+      <div class="card stat">
+        <div class="number">3</div>
+        <div class="label">Running Pods</div>
+        <div class="sub">0 restarts</div>
+      </div>
+      <div class="card stat">
+        <div class="number">0</div>
+        <div class="label">Public Endpoints</div>
+        <div class="sub">ClusterIP only</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Nodes + Workloads -->
+  <section>
+    <div class="grid grid-2">
+
+      <div class="card">
+        <h2>Worker Nodes</h2>
+        <div class="node-grid">
+          <div class="node-card">
+            <div class="node-name">aks-nodepool1-…-000000</div>
+            <div class="node-info">
+              v1.34.7 &bull; Ubuntu 22.04<br>
+              Standard_D2s_v6 &bull; 2 vCPU / 8 GB
+            </div>
+            <div style="margin-top:.5rem"><span class="pill ready">Ready</span></div>
+          </div>
+          <div class="node-card">
+            <div class="node-name">aks-nodepool1-…-000001</div>
+            <div class="node-info">
+              v1.34.7 &bull; Ubuntu 22.04<br>
+              Standard_D2s_v6 &bull; 2 vCPU / 8 GB
+            </div>
+            <div style="margin-top:.5rem"><span class="pill ready">Ready</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Pods — namespace: lab</h2>
+        <div class="status-row">
+          <div>
+            <div class="name">nginx (×2 replicas)</div>
+            <div class="meta">nginx:1.27-alpine &bull; requests: 100m CPU / 64Mi</div>
+          </div>
+          <span class="pill running">Running</span>
+        </div>
+        <div class="status-row">
+          <div>
+            <div class="name">mariadb</div>
+            <div class="meta">mariadb:10.11 &bull; requests: 250m CPU / 256Mi</div>
+          </div>
+          <span class="pill running">Running</span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Services + PVC -->
+  <section>
+    <div class="grid grid-2">
+
+      <div class="card">
+        <h2>Services</h2>
+        <div class="status-row">
+          <div>
+            <div class="name">nginx</div>
+            <div class="meta">ClusterIP 10.0.233.233 &bull; port 80</div>
+          </div>
+          <span class="pill internal">ClusterIP</span>
+        </div>
+        <div class="status-row">
+          <div>
+            <div class="name">mariadb</div>
+            <div class="meta">ClusterIP 10.0.63.54 &bull; port 3306</div>
+          </div>
+          <span class="pill internal">ClusterIP</span>
+        </div>
+        <p style="margin-top:.9rem;font-size:.78rem;color:var(--muted)">
+          No LoadBalancer services — zero public exposure. Access via <code style="color:var(--orange)">kubectl port-forward</code>.
+        </p>
+      </div>
+
+      <div class="card">
+        <h2>Persistent Storage</h2>
+        <div class="status-row">
+          <div>
+            <div class="name">mariadb-data</div>
+            <div class="meta">managed-csi &bull; ReadWriteOnce &bull; 5 Gi</div>
+          </div>
+          <span class="pill bound">Bound</span>
+        </div>
+        <p style="margin-top:.9rem;font-size:.78rem;color:var(--muted)">
+          Azure Disk CSI driver. Data persists across pod restarts and rescheduling events.
+        </p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Architecture diagram -->
+  <section>
+    <div class="card diagram-card">
+      <h2>Architecture</h2>
+      <div class="mermaid">
+graph LR
+    subgraph Internet
+        YOU(["👤 Operator\n(kubectl)"])
+    end
+
+    subgraph Azure["Azure — West Europe"]
+        API["AKS Control Plane\n(managed by Azure)"]
+
+        subgraph Nodes["Node Pool  ×2  Standard_D2s_v6"]
+            subgraph NS["Namespace: lab"]
+                N1["nginx pod"]
+                N2["nginx pod"]
+                M["mariadb pod"]
+                PVC[("PVC 5Gi\nmanaged-csi")]
+            end
+        end
+
+        SVC_N["Service: nginx\nClusterIP :80"]
+        SVC_M["Service: mariadb\nClusterIP :3306"]
+    end
+
+    YOU -->|"kubectl (TLS)"| API
+    API --> Nodes
+    N1 --> SVC_M --> M --> PVC
+    N2 --> SVC_M
+    YOU -->|"port-forward"| SVC_N
+    SVC_N --> N1
+    SVC_N --> N2
+
+    style Internet fill:#0d1117,stroke:#30363d,color:#8b949e
+    style Azure fill:#161b22,stroke:#30363d,color:#8b949e
+    style Nodes fill:#0d1117,stroke:#30363d,color:#8b949e
+    style NS fill:#1c2128,stroke:#30363d,color:#8b949e
+    style YOU fill:#1c2128,stroke:#58a6ff,color:#c9d1d9
+    style API fill:#1c2128,stroke:#58a6ff,color:#c9d1d9
+    style M fill:#1c2128,stroke:#3fb950,color:#c9d1d9
+    style N1 fill:#1c2128,stroke:#3fb950,color:#c9d1d9
+    style N2 fill:#1c2128,stroke:#3fb950,color:#c9d1d9
+    style PVC fill:#1c2128,stroke:#a371f7,color:#c9d1d9
+    style SVC_N fill:#1c2128,stroke:#8b949e,color:#8b949e
+    style SVC_M fill:#1c2128,stroke:#8b949e,color:#8b949e
+      </div>
+    </div>
+  </section>
+
+  <!-- Security + Stack -->
+  <section>
+    <div class="grid grid-2">
+
+      <div class="card">
+        <h2>Security Design</h2>
+        <div class="sec-item">
+          <div class="sec-icon">🔒</div>
+          <div>
+            <div class="sec-label">No public endpoints</div>
+            <div class="sec-desc">All services use ClusterIP. No LoadBalancer or NodePort exposed to the internet.</div>
+          </div>
+        </div>
+        <div class="sec-item">
+          <div class="sec-icon">🔑</div>
+          <div>
+            <div class="sec-label">Secrets management</div>
+            <div class="sec-desc">Database credentials stored as Kubernetes Secrets, never in manifests or environment args.</div>
+          </div>
+        </div>
+        <div class="sec-item">
+          <div class="sec-icon">🛡️</div>
+          <div>
+            <div class="sec-label">Least privilege</div>
+            <div class="sec-desc">appuser has SELECT/INSERT/UPDATE/DELETE on appdb only. monitor user is read-only.</div>
+          </div>
+        </div>
+        <div class="sec-item">
+          <div class="sec-icon">📦</div>
+          <div>
+            <div class="sec-label">Resource limits</div>
+            <div class="sec-desc">CPU and memory requests/limits set on all containers. Prevents noisy-neighbour issues and OOMKill cascades.</div>
+          </div>
+        </div>
+        <div class="sec-item">
+          <div class="sec-icon">❤️</div>
+          <div>
+            <div class="sec-label">Health probes</div>
+            <div class="sec-desc">Liveness and readiness probes on both nginx and MariaDB. Kubernetes restarts unhealthy pods automatically.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Tech Stack</h2>
+        <div class="stack-item">
+          <div><div class="tech">Azure Kubernetes Service</div><div class="meta" style="font-size:.78rem;color:var(--muted)">Managed control plane, Azure CNI overlay</div></div>
+          <span class="ver">1.34.7</span>
+        </div>
+        <div class="stack-item">
+          <div><div class="tech">Nginx</div><div class="meta" style="font-size:.78rem;color:var(--muted)">Web / reverse proxy, 2 replicas</div></div>
+          <span class="ver">1.27-alpine</span>
+        </div>
+        <div class="stack-item">
+          <div><div class="tech">MariaDB</div><div class="meta" style="font-size:.78rem;color:var(--muted)">Relational database, PVC-backed</div></div>
+          <span class="ver">10.11</span>
+        </div>
+        <div class="stack-item">
+          <div><div class="tech">Azure Disk CSI</div><div class="meta" style="font-size:.78rem;color:var(--muted)">Persistent storage driver (managed-csi)</div></div>
+          <span class="ver">built-in</span>
+        </div>
+        <div class="stack-item">
+          <div><div class="tech">Azure CLI + kubectl</div><div class="meta" style="font-size:.78rem;color:var(--muted)">Provisioning and cluster management</div></div>
+          <span class="ver">v1.34.7</span>
+        </div>
+        <div class="stack-item">
+          <div><div class="tech">RBAC</div><div class="meta" style="font-size:.78rem;color:var(--muted)">Enabled cluster-wide, managed identity</div></div>
+          <span class="ver">enabled</span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Design decisions -->
+  <section>
+    <div class="card">
+      <h2>Design Decisions</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;margin-top:.5rem">
+        <div>
+          <div style="font-weight:600;color:#fff;font-size:.875rem">Why ClusterIP only?</div>
+          <div style="color:var(--muted);font-size:.8rem;margin-top:.3rem">
+            Exposing services via LoadBalancer adds a public attack surface. Internal-only services are accessed via <code style="color:var(--orange)">kubectl port-forward</code> — authenticated through the AKS API server, which logs all access.
+          </div>
+        </div>
+        <div>
+          <div style="font-weight:600;color:#fff;font-size:.875rem">Why 2 Nginx replicas?</div>
+          <div style="color:var(--muted);font-size:.8rem;margin-top:.3rem">
+            Demonstrates pod scheduling across nodes, rolling update behavior, and how Kubernetes routes traffic via kube-proxy. In production, a HorizontalPodAutoscaler would manage replica count based on CPU load.
+          </div>
+        </div>
+        <div>
+          <div style="font-weight:600;color:#fff;font-size:.875rem">Why managed-csi for storage?</div>
+          <div style="color:var(--muted);font-size:.8rem;margin-top:.3rem">
+            Azure Disk CSI is the default StorageClass in AKS. It provisions Azure Managed Disks automatically and supports volume snapshots — relevant for backup and DR scenarios.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>
+      Lab deployed with <a href="https://azure.microsoft.com/en-us/products/kubernetes-service">Azure Kubernetes Service</a> &bull;
+      Source: <a href="https://github.com/hermanl0/k8s-test02">github.com/hermanl0/k8s-test02</a>
+    </p>
+  </footer>
+
+</div>
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: 'dark', darkMode: true });
+</script>
+</body>
+</html>
