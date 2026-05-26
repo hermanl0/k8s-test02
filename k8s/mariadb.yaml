@@ -25,11 +25,19 @@ spec:
       labels:
         app: mariadb
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: mariadb
         image: mariadb:10.11
         ports:
         - containerPort: 3306
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: [ALL]
+            add: [SETUID, SETGID]  # mariadb drops to mysql user at startup
         env:
         - name: MARIADB_ROOT_PASSWORD
           valueFrom:

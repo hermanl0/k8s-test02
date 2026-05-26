@@ -13,11 +13,18 @@ spec:
       labels:
         app: doom
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: doom
         image: elliottking/doom-wasm:0.1.1
         ports:
         - containerPort: 8000
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: [ALL]
         resources:
           requests:
             cpu: 50m
@@ -25,6 +32,13 @@ spec:
           limits:
             cpu: 200m
             memory: 128Mi
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 30
+          failureThreshold: 3
         readinessProbe:
           httpGet:
             path: /

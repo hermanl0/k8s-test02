@@ -1,0 +1,153 @@
+# Default deny all ingress and egress in the lab namespace.
+# Specific allow rules below selectively open only what each workload needs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: lab
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+# Allow DNS egress from every pod in lab (required for service discovery).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: lab
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+---
+# nginx: accept traffic from ingress-nginx only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-nginx
+  namespace: lab
+spec:
+  podSelector:
+    matchLabels:
+      app: nginx
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+    ports:
+    - port: 8080
+      protocol: TCP
+---
+# doom: accept traffic from doom-dashboard only (proxied by nginx sidecar).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-doom
+  namespace: lab
+spec:
+  podSelector:
+    matchLabels:
+      app: doom
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: doom-dashboard
+    ports:
+    - port: 8000
+      protocol: TCP
+---
+# doom-dashboard: accept traffic from ingress-nginx.
+# Egress: reach doom (game backend) and Prometheus in monitoring namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-doom-dashboard
+  namespace: lab
+spec:
+  podSelector:
+    matchLabels:
+      app: doom-dashboard
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+    ports:
+    - port: 8080
+      protocol: TCP
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: doom
+    ports:
+    - port: 8000
+      protocol: TCP
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: monitoring
+    ports:
+    - port: 9090
+      protocol: TCP
+---
+# mariadb: accept connections from any pod in the lab namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mariadb
+  namespace: lab
+spec:
+  podSelector:
+    matchLabels:
+      app: mariadb
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector: {}
+    ports:
+    - port: 3306
+      protocol: TCP
+---
+# uptimekuma: accept traffic from ingress-nginx.
+# Egress is fully open — uptime-kuma pings arbitrary external endpoints.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-uptimekuma
+  namespace: lab
+spec:
+  podSelector:
+    matchLabels:
+      app: uptimekuma
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+    ports:
+    - port: 3001
+      protocol: TCP
+  egress:
+  - {}

@@ -15,6 +15,10 @@ grafana:
   grafana.ini:
     server:
       root_url: "https://grafana.hl0.dev"
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
   additionalDataSources:
   - name: Loki
     type: loki

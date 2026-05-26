@@ -28,6 +28,12 @@ jobs:
             yq e '.' "$f" > /dev/null && echo "OK"
           done
 
+      - name: Scan for secrets
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz \
+            | tar -xz -C /tmp gitleaks
+          /tmp/gitleaks detect --source . --redact --exit-code 1
+
   deploy:
     name: Deploy to cluster
     runs-on: ubuntu-latest
@@ -57,6 +63,7 @@ jobs:
       - name: Apply manifests
         run: |
           kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/networkpolicies.yaml
           kubectl apply -f k8s/mariadb.yaml
           kubectl apply -f k8s/nginx.yaml
           kubectl apply -f k8s/uptimekuma.yaml
@@ -69,6 +76,15 @@ jobs:
           kubectl rollout status deployment/mariadb -n lab --timeout=120s
           kubectl rollout status deployment/uptimekuma -n lab --timeout=120s
           kubectl rollout status deployment/doom-dashboard -n lab --timeout=60s
+
+      - name: Create Grafana admin secret
+        run: |
+          kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create secret generic grafana-admin \
+            --from-literal=admin-user=admin \
+            --from-literal=admin-password="${{ secrets.GRAFANA_ADMIN_PASSWORD }}" \
+            --namespace monitoring \
+            --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy monitoring stack
         run: |
@@ -85,7 +101,6 @@ jobs:
             --namespace monitoring \
             --create-namespace \
             --values k8s/helm/kube-prometheus-stack-values.yaml \
-            --set grafana.adminPassword="${{ secrets.GRAFANA_ADMIN_PASSWORD }}" \
             --timeout 5m
 
       - name: Verify monitoring rollout

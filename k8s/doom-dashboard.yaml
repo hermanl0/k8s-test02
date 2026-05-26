@@ -6,8 +6,15 @@ metadata:
 data:
   default.conf: |
     server {
-        listen 80;
+        listen 8080;
         server_name _;
+        server_tokens off;
+
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-src 'self'; connect-src 'self'" always;
 
         location = / {
             root /usr/share/nginx/html;
@@ -25,12 +32,98 @@ data:
             proxy_read_timeout 60s;
         }
 
-        location /prom/ {
-            proxy_pass http://kube-prometheus-stack-prometheus.monitoring:9090/;
-            proxy_set_header Host $host;
-            proxy_read_timeout 10s;
+        location /metrics-data {
+            proxy_pass http://127.0.0.1:9091/metrics-data;
+            proxy_read_timeout 6s;
         }
     }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: doom-dashboard-metrics
+  namespace: lab
+data:
+  metrics_server.py: |
+    #!/usr/bin/env python3
+    import json, time, threading, urllib.request, urllib.parse
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    PROM = "http://kube-prometheus-stack-prometheus.monitoring:9090/api/v1/query"
+
+    SCALARS = {
+        "cpu":    '100 - avg(rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100',
+        "mem":    '(1 - avg(node_memory_MemAvailable_bytes)/avg(node_memory_MemTotal_bytes)) * 100',
+        "rps":    'sum(rate(nginx_ingress_controller_requests{ingress="doom-ingress"}[2m])) or vector(0)',
+        "hits5m": 'sum(increase(nginx_ingress_controller_requests{ingress="doom-ingress"}[5m])) or vector(0)',
+        "hits1h": 'sum(increase(nginx_ingress_controller_requests{ingress="doom-ingress"}[1h])) or vector(0)',
+        "pods":   'sum(kube_pod_status_phase{phase="Running"})',
+        "nodes":  'count(kube_node_info)',
+        "ns":     'count(kube_namespace_labels)',
+    }
+    INGRESS_Q = 'sort_desc(sum by (ingress)(rate(nginx_ingress_controller_requests[2m])))'
+
+    _cache = {}
+    _lock  = threading.Lock()
+
+    def _query(q):
+        url = PROM + "?query=" + urllib.parse.quote(q)
+        with urllib.request.urlopen(url, timeout=5) as r:
+            d = json.load(r)
+        if d["status"] != "success":
+            return []
+        return d["data"]["result"]
+
+    def _fetch():
+        out = {}
+        for k, q in SCALARS.items():
+            try:
+                rs = _query(q)
+                out[k] = float(rs[0]["value"][1]) if rs else None
+            except Exception:
+                out[k] = None
+        try:
+            out["ingress"] = [
+                {"ingress": r["metric"].get("ingress", "default"),
+                 "rps": float(r["value"][1])}
+                for r in _query(INGRESS_Q)
+            ]
+        except Exception:
+            out["ingress"] = []
+        return out
+
+    def _loop():
+        while True:
+            try:
+                data = _fetch()
+                with _lock:
+                    _cache.clear()
+                    _cache.update(data)
+                    _cache["ok"] = True
+            except Exception as e:
+                with _lock:
+                    _cache["ok"] = False
+                print(f"[metrics] error: {e}", flush=True)
+            time.sleep(5)
+
+    class _H(BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+        def do_GET(self):
+            if self.path != "/metrics-data":
+                self.send_response(404)
+                self.end_headers()
+                return
+            with _lock:
+                body = json.dumps(dict(_cache)).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    threading.Thread(target=_loop, daemon=True).start()
+    print("[metrics] server starting on 127.0.0.1:9091", flush=True)
+    HTTPServer(("127.0.0.1", 9091), _H).serve_forever()
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -157,19 +250,7 @@ data:
       </div>
     </div>
     <script>
-      var Q='/prom/api/v1/query', buf=new Array(26).fill(0);
-      async function get(q){
-        var r=await fetch(Q+'?query='+encodeURIComponent(q));
-        var j=await r.json();
-        if(j.status!=='success')return null;
-        var rs=j.data.result;
-        return rs.length?parseFloat(rs[0].value[1]):null;
-      }
-      async function getAll(q){
-        var r=await fetch(Q+'?query='+encodeURIComponent(q));
-        var j=await r.json();
-        return j.status==='success'?j.data.result:[];
-      }
+      var buf=new Array(26).fill(0);
       function bar(bi,vi,pct){
         var b=document.getElementById(bi);
         b.style.width=pct+'%';
@@ -185,29 +266,22 @@ data:
       }
       async function tick(){
         try{
-          var cpu=await get('100 - avg(rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100');
-          if(cpu!==null)bar('cpu-b','cpu-v',Math.round(cpu));
-          var mem=await get('(1 - avg(node_memory_MemAvailable_bytes)/avg(node_memory_MemTotal_bytes)) * 100');
-          if(mem!==null)bar('mem-b','mem-v',Math.round(mem));
-          var rps=await get('sum(rate(nginx_ingress_controller_requests{ingress="doom-ingress"}[2m])) or vector(0)');
-          var rv=rps!==null?rps:0;
+          var d=await fetch('/metrics-data').then(function(r){return r.json();});
+          if(d.cpu!=null)bar('cpu-b','cpu-v',Math.round(d.cpu));
+          if(d.mem!=null)bar('mem-b','mem-v',Math.round(d.mem));
+          var rv=d.rps||0;
           document.getElementById('rps').textContent=rv.toFixed(3)+'/s';
           buf.push(rv);buf.shift();drawSpark();
-          var h5=await get('sum(increase(nginx_ingress_controller_requests{ingress="doom-ingress"}[5m])) or vector(0)');
-          document.getElementById('h5').textContent=Math.round(h5||0);
-          var h1=await get('sum(increase(nginx_ingress_controller_requests{ingress="doom-ingress"}[1h])) or vector(0)');
-          document.getElementById('h1').textContent=Math.round(h1||0);
-          var pods=await get('sum(kube_pod_status_phase{phase="Running"})');
-          if(pods!==null)document.getElementById('n-p').textContent=Math.round(pods);
-          var nodes=await get('count(kube_node_info)');
-          if(nodes!==null)document.getElementById('n-n').textContent=Math.round(nodes);
-          var ns=await get('count(kube_namespace_labels)');
-          if(ns!==null)document.getElementById('n-s').textContent=Math.round(ns);
-          var ings=await getAll('sort_desc(sum by (ingress)(rate(nginx_ingress_controller_requests[2m])))');
+          document.getElementById('h5').textContent=Math.round(d.hits5m||0);
+          document.getElementById('h1').textContent=Math.round(d.hits1h||0);
+          if(d.pods!=null)document.getElementById('n-p').textContent=Math.round(d.pods);
+          if(d.nodes!=null)document.getElementById('n-n').textContent=Math.round(d.nodes);
+          if(d.ns!=null)document.getElementById('n-s').textContent=Math.round(d.ns);
+          var ings=d.ingress||[];
           document.getElementById('ing').innerHTML=ings.length
             ?ings.map(function(r){
-                return '<div class="irow"><div class="iname">'+(r.metric.ingress||'default')+
-                  '</div><div class="irps">'+parseFloat(r.value[1]).toFixed(3)+'/s</div></div>';
+                return '<div class="irow"><div class="iname">'+(r.ingress||'default')+
+                  '</div><div class="irps">'+parseFloat(r.rps).toFixed(3)+'/s</div></div>';
               }).join('')
             :'<div class="irow"><div class="iname">no traffic yet</div></div>';
           document.getElementById('dot').className='dot';
@@ -241,11 +315,21 @@ spec:
       labels:
         app: doom-dashboard
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: nginx
-        image: nginx:1.27-alpine
+        image: nginxinc/nginx-unprivileged:1.27-alpine
         ports:
-        - containerPort: 80
+        - containerPort: 8080
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 101
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
         resources:
           requests:
             cpu: 50m
@@ -260,6 +344,34 @@ spec:
         - name: html
           mountPath: /usr/share/nginx/html/index.html
           subPath: index.html
+        - name: tmp
+          mountPath: /tmp
+      - name: metrics
+        image: python:3.12-alpine
+        command: ["python3", "/app/metrics_server.py"]
+        env:
+        - name: PYTHONDONTWRITEBYTECODE
+          value: "1"
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65534
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
+        resources:
+          requests:
+            cpu: 20m
+            memory: 24Mi
+          limits:
+            cpu: 50m
+            memory: 48Mi
+        volumeMounts:
+        - name: metrics-script
+          mountPath: /app
+          readOnly: true
       volumes:
       - name: nginx-config
         configMap:
@@ -267,6 +379,12 @@ spec:
       - name: html
         configMap:
           name: doom-dashboard-html
+      - name: metrics-script
+        configMap:
+          name: doom-dashboard-metrics
+          defaultMode: 0444
+      - name: tmp
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -278,4 +396,4 @@ spec:
     app: doom-dashboard
   ports:
   - port: 80
-    targetPort: 80
+    targetPort: 8080
