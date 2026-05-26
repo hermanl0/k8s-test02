@@ -7,3 +7,9 @@ controller:
     limits:
       cpu: 300m
       memory: 256Mi
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      additionalLabels:
+        release: kube-prometheus-stack

@@ -15,6 +15,30 @@ grafana:
   grafana.ini:
     server:
       root_url: "https://grafana.hl0.dev"
+  additionalDataSources:
+  - name: Loki
+    type: loki
+    url: http://loki-stack:3100
+    access: proxy
+    isDefault: false
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+      - name: default
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/default
+  dashboards:
+    default:
+      ingress-nginx:
+        gnetId: 9614
+        revision: 1
+        datasource: Prometheus
 
 prometheus:
   prometheusSpec:

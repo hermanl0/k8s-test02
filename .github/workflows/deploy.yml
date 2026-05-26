@@ -92,6 +92,16 @@ jobs:
           kubectl rollout status deployment/kube-prometheus-stack-kube-state-metrics -n monitoring --timeout=120s
           kubectl rollout status statefulset/prometheus-kube-prometheus-stack-prometheus -n monitoring --timeout=300s
 
+      - name: Deploy Loki stack
+        run: |
+          helm repo add grafana https://grafana.github.io/helm-charts
+          helm repo update
+          helm upgrade --install loki-stack grafana/loki-stack \
+            --namespace monitoring \
+            --values k8s/helm/loki-stack-values.yaml \
+            --timeout 5m
+          kubectl rollout status daemonset/loki-stack-promtail -n monitoring --timeout=120s
+
       - name: Deploy cert-manager
         run: |
           helm repo add jetstack https://charts.jetstack.io
