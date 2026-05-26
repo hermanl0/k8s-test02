@@ -116,8 +116,8 @@ jobs:
             --namespace ingress-nginx \
             --create-namespace \
             --values k8s/helm/ingress-nginx-values.yaml \
-            --timeout 5m \
-            --wait
+            --timeout 5m
+          kubectl rollout status deployment/ingress-nginx-controller -n ingress-nginx --timeout=120s
 
       - name: Update Cloudflare DNS
         run: |
