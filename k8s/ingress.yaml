@@ -59,10 +59,10 @@ spec:
   ingressClassName: nginx
   tls:
   - hosts:
-    - grafana-aks.hl0.dev
+    - grafana.hl0.dev
     secretName: grafana-tls
   rules:
-  - host: grafana-aks.hl0.dev
+  - host: grafana.hl0.dev
     http:
       paths:
       - path: /

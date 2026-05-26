@@ -14,7 +14,7 @@ grafana:
       memory: 256Mi
   grafana.ini:
     server:
-      root_url: "https://grafana-aks.hl0.dev"
+      root_url: "https://grafana.hl0.dev"
   additionalDataSources:
   - name: Loki
     type: loki

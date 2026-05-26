@@ -175,7 +175,7 @@ jobs:
           fi
 
           upsert_dns "test02.hl0.dev"
-          upsert_dns "grafana-aks.hl0.dev"
+          upsert_dns "grafana.hl0.dev"
           upsert_dns "doom.hl0.dev"
 
       - name: Apply Ingress resources
