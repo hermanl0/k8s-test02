@@ -69,6 +69,7 @@ jobs:
           kubectl apply -f k8s/uptimekuma.yaml
           kubectl apply -f k8s/doom.yaml
           kubectl apply -f k8s/doom-dashboard.yaml
+          kubectl rollout restart deployment/doom-dashboard -n lab
 
       - name: Verify rollout
         run: |
