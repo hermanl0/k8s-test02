@@ -12,9 +12,6 @@ grafana:
     limits:
       cpu: 300m
       memory: 256Mi
-  grafana.ini:
-    server:
-      root_url: "%(protocol)s://%(domain)s/"
 
 prometheus:
   prometheusSpec:
@@ -33,7 +30,7 @@ prometheus:
           accessModes: ["ReadWriteOnce"]
           resources:
             requests:
-              storage: 10Gi
+              storage: 5Gi
 
 alertmanager:
   enabled: false
@@ -43,3 +40,16 @@ nodeExporter:
 
 kubeStateMetrics:
   enabled: true
+
+# AKS does not expose control-plane component metrics
+kubeControllerManager:
+  enabled: false
+
+kubeScheduler:
+  enabled: false
+
+kubeEtcd:
+  enabled: false
+
+kubeProxy:
+  enabled: false

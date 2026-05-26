@@ -81,9 +81,17 @@ jobs:
             --create-namespace \
             --values k8s/helm/kube-prometheus-stack-values.yaml \
             --set grafana.adminPassword="${{ secrets.GRAFANA_ADMIN_PASSWORD }}" \
-            --timeout 15m \
-            --wait
+            --timeout 5m
+
+      - name: Verify monitoring rollout
+        run: |
+          kubectl rollout status deployment/kube-prometheus-stack-grafana -n monitoring --timeout=300s
+          kubectl rollout status deployment/kube-prometheus-stack-kube-state-metrics -n monitoring --timeout=120s
+          kubectl rollout status statefulset/prometheus-kube-prometheus-stack-prometheus -n monitoring --timeout=300s
 
       - name: Show cluster state
         if: always()
-        run: kubectl get pods,svc,pvc -n lab
+        run: |
+          kubectl get pods,svc,pvc -n lab
+          echo "---"
+          kubectl get pods,svc,pvc -n monitoring
