@@ -169,8 +169,13 @@ jobs:
             fi
           }
 
+          if [ -z "$INGRESS_IP" ]; then
+            echo "ERROR: LoadBalancer IP not assigned after 5 minutes — check Azure public IP quota"
+            exit 1
+          fi
+
           upsert_dns "test02.hl0.dev"
-          upsert_dns "grafana.hl0.dev"
+          upsert_dns "grafana-aks.hl0.dev"
           upsert_dns "doom.hl0.dev"
 
       - name: Apply Ingress resources
