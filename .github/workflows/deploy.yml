@@ -60,6 +60,7 @@ jobs:
           kubectl apply -f k8s/mariadb.yaml
           kubectl apply -f k8s/nginx.yaml
           kubectl apply -f k8s/uptimekuma.yaml
+          kubectl apply -f k8s/doom.yaml
 
       - name: Verify rollout
         run: |
@@ -160,6 +161,7 @@ jobs:
 
           upsert_dns "test02.hl0.dev"
           upsert_dns "grafana.hl0.dev"
+          upsert_dns "doom.hl0.dev"
 
       - name: Apply Ingress resources
         run: kubectl apply -f k8s/ingress.yaml
