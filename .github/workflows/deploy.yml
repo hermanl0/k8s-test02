@@ -23,7 +23,7 @@ jobs:
 
       - name: Validate YAML syntax
         run: |
-          for f in k8s/*.yaml; do
+          for f in k8s/*.yaml k8s/helm/*.yaml; do
             echo "Validating $f..."
             yq e '.' "$f" > /dev/null && echo "OK"
           done
@@ -64,6 +64,19 @@ jobs:
         run: |
           kubectl rollout status deployment/nginx -n lab --timeout=120s
           kubectl rollout status deployment/mariadb -n lab --timeout=120s
+
+      - name: Deploy monitoring stack
+        run: |
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo update
+          helm upgrade --install kube-prometheus-stack \
+            prometheus-community/kube-prometheus-stack \
+            --namespace monitoring \
+            --create-namespace \
+            --values k8s/helm/kube-prometheus-stack-values.yaml \
+            --set grafana.adminPassword="${{ secrets.GRAFANA_ADMIN_PASSWORD }}" \
+            --timeout 5m \
+            --wait
 
       - name: Show cluster state
         if: always()
