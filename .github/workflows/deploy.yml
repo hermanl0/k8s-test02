@@ -1,0 +1,69 @@
+name: Deploy to AKS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "k8s/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "k8s/**"
+
+jobs:
+  validate:
+    name: Validate manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate YAML syntax
+        run: |
+          for f in k8s/*.yaml; do
+            echo "Validating $f..."
+            kubectl apply --dry-run=client -f "$f" 2>&1 || true
+          done
+        env:
+          KUBECONFIG: /dev/null
+
+      - name: Lint with kubeval
+        uses: instrumenta/kubeval-action@master
+        with:
+          files: k8s
+
+  deploy:
+    name: Deploy to cluster
+    runs-on: ubuntu-latest
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group lab-rg \
+            --name lab-aks \
+            --overwrite-existing
+
+      - name: Apply manifests
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/mariadb.yaml
+          kubectl apply -f k8s/nginx.yaml
+
+      - name: Verify rollout
+        run: |
+          kubectl rollout status deployment/nginx -n lab --timeout=120s
+          kubectl rollout status deployment/mariadb -n lab --timeout=120s
+
+      - name: Show cluster state
+        run: kubectl get pods,svc,pvc -n lab

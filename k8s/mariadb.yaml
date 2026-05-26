@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mariadb-data
+  namespace: lab
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: managed-csi
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mariadb
+  namespace: lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mariadb
+  template:
+    metadata:
+      labels:
+        app: mariadb
+    spec:
+      containers:
+      - name: mariadb
+        image: mariadb:10.11
+        ports:
+        - containerPort: 3306
+        env:
+        - name: MARIADB_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mariadb-secret
+              key: root-password
+        - name: MARIADB_DATABASE
+          value: appdb
+        - name: MARIADB_USER
+          value: appuser
+        - name: MARIADB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mariadb-secret
+              key: app-password
+        resources:
+          requests:
+            cpu: 250m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/mysql
+        livenessProbe:
+          exec:
+            command: ["healthcheck.sh", "--connect", "--innodb_initialized"]
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command: ["healthcheck.sh", "--connect"]
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: mariadb-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mariadb
+  namespace: lab
+spec:
+  selector:
+    app: mariadb
+  ports:
+  - port: 3306
+    targetPort: 3306
+  type: ClusterIP
