@@ -69,14 +69,20 @@ jobs:
         run: |
           helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
           helm repo update
+          RELEASE_STATUS=$(helm status kube-prometheus-stack -n monitoring 2>/dev/null | grep "STATUS:" | awk '{print $2}' || echo "not-found")
+          if [[ "$RELEASE_STATUS" == "failed" || "$RELEASE_STATUS" == "pending-install" || "$RELEASE_STATUS" == "pending-upgrade" ]]; then
+            echo "Cleaning up stuck release (status: $RELEASE_STATUS)"
+            helm uninstall kube-prometheus-stack -n monitoring 2>/dev/null || true
+            sleep 10
+          fi
           helm upgrade --install kube-prometheus-stack \
             prometheus-community/kube-prometheus-stack \
             --namespace monitoring \
             --create-namespace \
             --values k8s/helm/kube-prometheus-stack-values.yaml \
             --set grafana.adminPassword="${{ secrets.GRAFANA_ADMIN_PASSWORD }}" \
-            --timeout 10m \
-            --atomic
+            --timeout 15m \
+            --wait
 
       - name: Show cluster state
         if: always()
