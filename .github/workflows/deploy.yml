@@ -23,7 +23,7 @@ jobs:
 
       - name: Validate YAML syntax
         run: |
-          for f in k8s/*.yaml k8s/helm/*.yaml; do
+          for f in k8s/*.yaml k8s/helm/*.yaml k8s/cert-manager/*.yaml; do
             echo "Validating $f..."
             yq e '.' "$f" > /dev/null && echo "OK"
           done
@@ -89,9 +89,86 @@ jobs:
           kubectl rollout status deployment/kube-prometheus-stack-kube-state-metrics -n monitoring --timeout=120s
           kubectl rollout status statefulset/prometheus-kube-prometheus-stack-prometheus -n monitoring --timeout=300s
 
+      - name: Deploy cert-manager
+        run: |
+          helm repo add jetstack https://charts.jetstack.io
+          helm repo update
+          helm upgrade --install cert-manager jetstack/cert-manager \
+            --namespace cert-manager \
+            --create-namespace \
+            --values k8s/helm/cert-manager-values.yaml \
+            --timeout 5m \
+            --wait
+
+      - name: Configure Cloudflare issuer
+        run: |
+          kubectl create secret generic cloudflare-api-token \
+            --from-literal=api-token="${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            --namespace cert-manager \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f k8s/cert-manager/clusterissuer.yaml
+
+      - name: Deploy ingress-nginx
+        run: |
+          helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+          helm repo update
+          helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+            --namespace ingress-nginx \
+            --create-namespace \
+            --values k8s/helm/ingress-nginx-values.yaml \
+            --timeout 5m \
+            --wait
+
+      - name: Update Cloudflare DNS
+        run: |
+          ZONE_ID="283c74f5bfbbb2a804dabdb938ccde8f"
+          CF_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}"
+
+          for i in $(seq 1 30); do
+            INGRESS_IP=$(kubectl get svc ingress-nginx-controller -n ingress-nginx \
+              -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+            [ -n "$INGRESS_IP" ] && break
+            echo "Waiting for LoadBalancer IP... ($i/30)"
+            sleep 10
+          done
+          echo "Ingress IP: $INGRESS_IP"
+
+          upsert_dns() {
+            local name=$1
+            local record_id
+            record_id=$(curl -s -H "Authorization: Bearer $CF_TOKEN" \
+              "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$name" | \
+              python3 -c "import sys,json; r=json.load(sys.stdin)['result']; print(r[0]['id'] if r else '')")
+            if [ -n "$record_id" ]; then
+              curl -s -X PATCH \
+                -H "Authorization: Bearer $CF_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "{\"content\":\"$INGRESS_IP\",\"proxied\":false}" \
+                "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$record_id" \
+                | python3 -c "import sys,json; d=json.load(sys.stdin); print('Updated' if d['success'] else d['errors'])"
+            else
+              curl -s -X POST \
+                -H "Authorization: Bearer $CF_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "{\"type\":\"A\",\"name\":\"$name\",\"content\":\"$INGRESS_IP\",\"ttl\":60,\"proxied\":false}" \
+                "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
+                | python3 -c "import sys,json; d=json.load(sys.stdin); print('Created' if d['success'] else d['errors'])"
+            fi
+          }
+
+          upsert_dns "test02.hl0.dev"
+          upsert_dns "grafana.hl0.dev"
+
+      - name: Apply Ingress resources
+        run: kubectl apply -f k8s/ingress.yaml
+
       - name: Show cluster state
         if: always()
         run: |
           kubectl get pods,svc,pvc -n lab
           echo "---"
           kubectl get pods,svc,pvc -n monitoring
+          echo "---"
+          kubectl get ingress -A
+          echo "---"
+          kubectl get certificate -A 2>/dev/null || true

@@ -1,6 +1,6 @@
 grafana:
   service:
-    type: LoadBalancer
+    type: ClusterIP
   persistence:
     enabled: true
     storageClassName: managed-csi
@@ -12,6 +12,9 @@ grafana:
     limits:
       cpu: 300m
       memory: 256Mi
+  grafana.ini:
+    server:
+      root_url: "https://grafana.hl0.dev"
 
 prometheus:
   prometheusSpec:
