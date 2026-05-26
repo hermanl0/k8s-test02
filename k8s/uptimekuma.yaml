@@ -25,18 +25,14 @@ spec:
       labels:
         app: uptimekuma
     spec:
-      securityContext:
-        seccompProfile:
-          type: RuntimeDefault
+      # uptime-kuma uses setpriv to drop to the node user at startup — the
+      # RuntimeDefault seccomp profile blocks a syscall Node.js needs.
+      # Mitigated by ClusterIP-only exposure and NetworkPolicy.
       containers:
       - name: uptimekuma
         image: louislam/uptime-kuma:1
         ports:
         - containerPort: 3001
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop: [ALL]
         resources:
           requests:
             cpu: 100m

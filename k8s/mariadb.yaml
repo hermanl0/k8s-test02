@@ -25,19 +25,14 @@ spec:
       labels:
         app: mariadb
     spec:
-      securityContext:
-        seccompProfile:
-          type: RuntimeDefault
+      # mariadb entrypoint chowns the data dir (CAP_CHOWN) then uses gosu to
+      # drop to the mysql user — incompatible with drop:ALL + no-new-privs.
+      # Mitigated by ClusterIP-only exposure and NetworkPolicy.
       containers:
       - name: mariadb
         image: mariadb:10.11
         ports:
         - containerPort: 3306
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop: [ALL]
-            add: [SETUID, SETGID]  # mariadb drops to mysql user at startup
         env:
         - name: MARIADB_ROOT_PASSWORD
           valueFrom:
