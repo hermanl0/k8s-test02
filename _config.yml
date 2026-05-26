@@ -1,0 +1,5 @@
+title: AKS Lab — Platform Dashboard
+description: Personal cloud lab running on Azure Kubernetes Service
+theme: jekyll-theme-cayman
+plugins:
+  - jekyll-relative-links
