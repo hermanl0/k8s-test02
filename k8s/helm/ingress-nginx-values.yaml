@@ -1,7 +1,10 @@
 controller:
   replicaCount: 1
   config:
-    allow-snippet-annotations: "true"
+    hsts: "true"
+    hsts-max-age: "31536000"
+    hsts-include-subdomains: "true"
+    hsts-preload: "true"
   service:
     annotations:
       service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: /healthz
