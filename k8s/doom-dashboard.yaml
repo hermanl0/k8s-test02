@@ -61,7 +61,8 @@ data:
         "nodes":  'count(kube_node_info)',
         "ns":     'count(kube_namespace_labels)',
     }
-    INGRESS_Q = 'sort_desc(sum by (ingress)(rate(nginx_ingress_controller_requests[2m])))'
+    INGRESS_Q  = 'sort_desc(sum by (ingress)(rate(nginx_ingress_controller_requests[2m])))'
+    PODS_Q     = 'kube_pod_status_phase == 1'
 
     _cache = {}
     _lock  = threading.Lock()
@@ -90,6 +91,16 @@ data:
             ]
         except Exception:
             out["ingress"] = []
+        try:
+            pods_raw = _query(PODS_Q)
+            out["pod_list"] = sorted([
+                {"ns":    r["metric"].get("namespace", ""),
+                 "pod":   r["metric"].get("pod", ""),
+                 "phase": r["metric"].get("phase", "")}
+                for r in pods_raw
+            ], key=lambda x: (x["ns"], x["pod"]))
+        except Exception:
+            out["pod_list"] = []
         return out
 
     def _loop():
@@ -142,63 +153,89 @@ data:
         :root{
           --red:#b81000;--rhi:#ff2200;--amb:#d08000;
           --grn:#00a848;--dim:#484848;--bdr:#202020;
-          --bg:#080808;--bg2:#0e0e0e;--bg3:#161616;--tx:#a0a0a0
+          --bg:#080808;--bg2:#0e0e0e;--bg3:#161616;--tx:#c0c0c0
         }
         html,body{height:100%;background:var(--bg);color:var(--tx);
-          font-family:'Courier New',monospace;font-size:15px;overflow:hidden}
+          font-family:'Courier New',monospace;font-size:16px;overflow:hidden}
         header{
-          height:38px;background:var(--bg2);border-bottom:2px solid var(--red);
-          display:flex;align-items:center;justify-content:space-between;padding:0 14px;
+          height:42px;background:var(--bg2);border-bottom:2px solid var(--red);
+          display:flex;align-items:center;justify-content:space-between;padding:0 16px;
           flex-shrink:0
         }
-        .h-logo{color:var(--rhi);font-weight:bold;letter-spacing:4px;font-size:12px;
+        .h-logo{color:var(--rhi);font-weight:bold;letter-spacing:4px;font-size:13px;
           text-shadow:0 0 8px var(--rhi)}
-        .h-right{display:flex;align-items:center;gap:16px;font-size:10px;color:var(--dim)}
-        .dot{width:7px;height:7px;border-radius:50%;background:var(--grn);
-          box-shadow:0 0 6px var(--grn);display:inline-block;margin-right:5px;
+        .h-right{display:flex;align-items:center;gap:18px;font-size:11px;color:var(--dim)}
+        .dot{width:8px;height:8px;border-radius:50%;background:var(--grn);
+          box-shadow:0 0 6px var(--grn);display:inline-block;margin-right:6px;
           animation:pulse 2s infinite}
         .dot.err{background:var(--rhi);box-shadow:0 0 6px var(--rhi);animation:none}
         .dot.init{background:var(--amb);box-shadow:0 0 6px var(--amb)}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-        #layout{display:flex;height:calc(100vh - 38px)}
-        #game{flex:1;background:#000;border-right:1px solid var(--bdr);overflow:hidden}
+
+        #layout{display:flex;height:calc(100vh - 42px)}
+        #game{flex:1;background:#000;border-right:2px solid var(--bdr);overflow:hidden}
         #game iframe{width:100%;height:100%;border:none;display:block}
+
         #panel{
-          width:300px;min-width:300px;background:var(--bg2);
-          display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden
+          width:460px;min-width:460px;background:var(--bg2);
+          display:flex;flex-direction:column;overflow:hidden
         }
-        .sec{border-bottom:1px solid var(--bdr);padding:10px 12px}
+        .sec{border-bottom:1px solid var(--bdr);padding:12px 14px;flex-shrink:0}
         .sec-hd{
-          font-size:11px;letter-spacing:2px;color:var(--dim);text-transform:uppercase;
-          margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--bdr)
+          font-size:11px;letter-spacing:3px;color:var(--dim);text-transform:uppercase;
+          margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid var(--bdr)
         }
-        .brow{display:flex;align-items:center;margin-bottom:8px}
-        .bl{width:38px;font-size:13px;color:var(--dim)}
-        .bt{flex:1;height:8px;background:var(--bg3);margin:0 8px;border:1px solid #1a1a1a;
-          border-radius:1px}
-        .bf{height:100%;background:var(--grn);transition:width .6s ease;border-radius:1px}
+
+        /* resource bars */
+        .brow{display:flex;align-items:center;margin-bottom:10px}
+        .bl{width:44px;font-size:14px;color:var(--dim)}
+        .bt{flex:1;height:10px;background:var(--bg3);margin:0 10px;border:1px solid #1a1a1a;border-radius:2px}
+        .bf{height:100%;background:var(--grn);transition:width .6s ease;border-radius:2px}
         .bf.w{background:var(--amb)}.bf.c{background:var(--rhi)}
-        .bv{width:40px;text-align:right;font-size:13px;color:var(--tx)}
+        .bv{width:46px;text-align:right;font-size:14px;color:var(--tx)}
+
+        /* fleet counters */
         .nums{display:flex;justify-content:space-around;padding:6px 0}
         .nb{text-align:center}
-        .nv{font-size:36px;color:var(--amb);line-height:1.1;
-          text-shadow:0 0 8px rgba(208,128,0,.3)}
-        .nl{font-size:11px;color:var(--dim);letter-spacing:1px;margin-top:2px}
-        .rrow{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:7px}
-        .rl{font-size:13px;color:var(--dim)}
-        .rv{font-size:24px;color:var(--amb);text-shadow:0 0 6px rgba(208,128,0,.3)}
-        .rv.sm{font-size:18px}
-        #spark{display:flex;align-items:flex-end;gap:2px;height:40px;margin-top:10px}
-        .sb{flex:1;background:var(--red);min-height:2px;border-radius:1px 1px 0 0;
-          transition:height .4s ease}
-        .irow{display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px}
+        .nv{font-size:52px;color:var(--amb);line-height:1;
+          text-shadow:0 0 12px rgba(208,128,0,.4);font-variant-numeric:tabular-nums}
+        .nl{font-size:12px;color:var(--dim);letter-spacing:2px;margin-top:4px}
+
+        /* doom traffic */
+        .rrow{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px}
+        .rl{font-size:14px;color:var(--dim)}
+        .rv{font-size:28px;color:var(--amb);text-shadow:0 0 8px rgba(208,128,0,.3);font-variant-numeric:tabular-nums}
+        .rv.sm{font-size:20px}
+        #spark{display:flex;align-items:flex-end;gap:2px;height:48px;margin-top:10px}
+        .sb{flex:1;background:var(--red);min-height:2px;border-radius:1px 1px 0 0;transition:height .4s ease}
+
+        /* pod roster */
+        #pod-sec{border-bottom:1px solid var(--bdr);padding:12px 14px;flex:1;overflow-y:auto;min-height:0}
+        .pgrp{margin-bottom:10px}
+        .pgrp-hd{
+          font-size:10px;letter-spacing:2px;text-transform:uppercase;
+          display:flex;justify-content:space-between;align-items:center;
+          padding-bottom:4px;margin-bottom:4px;border-bottom:1px solid #1c1c1c
+        }
+        .pgrp-ct{font-size:12px;color:var(--dim)}
+        .prow{display:flex;align-items:center;gap:7px;margin-bottom:3px}
+        .pdot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+        .pdot.run{background:var(--grn);box-shadow:0 0 4px var(--grn)}
+        .pdot.pend{background:var(--amb);box-shadow:0 0 4px var(--amb)}
+        .pdot.fail{background:var(--rhi);box-shadow:0 0 4px var(--rhi)}
+        .pname{font-size:13px;color:var(--tx);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+
+        /* ingress */
+        .irow{display:flex;justify-content:space-between;margin-bottom:6px;font-size:14px}
         .iname{color:var(--dim);flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-        .irps{color:var(--amb);margin-left:8px;flex-shrink:0}
-        #footer{margin-top:auto;padding:8px 12px;font-size:11px;color:#252525;
+        .irps{color:var(--amb);margin-left:10px;flex-shrink:0}
+
+        #footer{padding:8px 14px;font-size:11px;color:#2a2a2a;
           border-top:1px solid var(--bdr);flex-shrink:0}
-        ::-webkit-scrollbar{width:4px}
+
+        ::-webkit-scrollbar{width:3px}
         ::-webkit-scrollbar-track{background:var(--bg2)}
-        ::-webkit-scrollbar-thumb{background:var(--bdr)}
+        ::-webkit-scrollbar-thumb{background:#303030}
       </style>
     </head>
     <body>
@@ -214,6 +251,7 @@ data:
         <iframe src="/doom/" allowfullscreen title="DOOM"></iframe>
       </div>
       <div id="panel">
+
         <div class="sec">
           <div class="sec-hd">&#9889; node resources</div>
           <div class="brow">
@@ -227,6 +265,7 @@ data:
             <div class="bv" id="mem-v">&mdash;</div>
           </div>
         </div>
+
         <div class="sec">
           <div class="sec-hd">&#128128; doom traffic</div>
           <div class="rrow"><div class="rl">REQ / SEC</div><div class="rv" id="rps">&mdash;</div></div>
@@ -234,6 +273,7 @@ data:
           <div class="rrow"><div class="rl">HITS &middot; 1 HR</div><div class="rv sm" id="h1">&mdash;</div></div>
           <div id="spark"></div>
         </div>
+
         <div class="sec">
           <div class="sec-hd">&#128760; fleet</div>
           <div class="nums">
@@ -242,53 +282,108 @@ data:
             <div class="nb"><div class="nv" id="n-s">&mdash;</div><div class="nl">NS</div></div>
           </div>
         </div>
-        <div class="sec" style="flex:1">
-          <div class="sec-hd">&#127760; all ingress &middot; req/s</div>
+
+        <div id="pod-sec">
+          <div class="sec-hd" style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--bdr)">&#128187; pod roster</div>
+          <div id="pods"><div class="prow"><span class="pname" style="color:#333">loading&hellip;</span></div></div>
+        </div>
+
+        <div class="sec" style="flex-shrink:0">
+          <div class="sec-hd">&#127760; ingress &middot; req/s</div>
           <div id="ing"><div class="irow"><div class="iname" style="color:#222">loading&hellip;</div></div></div>
         </div>
+
         <div id="footer">auto-refresh every 5s</div>
       </div>
     </div>
     <script>
-      var buf=new Array(26).fill(0);
+      var buf = new Array(26).fill(0);
+
+      var NS_COL = {
+        'lab':          '#00a848',
+        'monitoring':   '#d08000',
+        'ingress-nginx':'#4488ff',
+        'cert-manager': '#a040d0',
+        'kube-system':  '#484848'
+      };
+      function nsColor(ns){ return NS_COL[ns]||'#606060'; }
+
+      function shortPod(n){
+        var m;
+        // Deployment: strip rs-hash (9-10 hex) + pod-hash (4-5 alnum)
+        m = n.match(/^(.+)-[a-f0-9]{9,10}-[a-z0-9]{4,5}$/);
+        if(m) return m[1];
+        // StatefulSet: ends in -\d+
+        m = n.match(/^(.+)-(\d+)$/);
+        if(m && m[1].length > 2) return m[1]+'-'+m[2];
+        // DaemonSet: strip trailing 5-char hash
+        m = n.match(/^(.+)-[a-z0-9]{5}$/);
+        if(m) return m[1];
+        return n;
+      }
+
       function bar(bi,vi,pct){
         var b=document.getElementById(bi);
         b.style.width=pct+'%';
         b.className='bf'+(pct>=85?' c':pct>=65?' w':'');
         document.getElementById(vi).textContent=pct+'%';
       }
+
       function drawSpark(){
         var el=document.getElementById('spark');
         var mx=Math.max.apply(null,buf.concat([0.0001]));
         el.innerHTML=buf.map(function(v){
-          return '<div class="sb" style="height:'+Math.max(2,(v/mx*30)).toFixed(1)+'px"></div>';
+          return '<div class="sb" style="height:'+Math.max(2,(v/mx*38)).toFixed(1)+'px"></div>';
         }).join('');
       }
+
+      function renderPods(list){
+        if(!list||!list.length){
+          document.getElementById('pods').innerHTML='<div class="prow"><span class="pname" style="color:#333">no data</span></div>';
+          return;
+        }
+        var byNs={};
+        list.forEach(function(p){ if(!byNs[p.ns]) byNs[p.ns]=[]; byNs[p.ns].push(p); });
+        var html='';
+        Object.keys(byNs).sort().forEach(function(ns){
+          var pods=byNs[ns], col=nsColor(ns);
+          html+='<div class="pgrp">';
+          html+='<div class="pgrp-hd" style="color:'+col+'"><span>'+ns+'</span><span class="pgrp-ct">'+pods.length+'</span></div>';
+          pods.forEach(function(p){
+            var dc=p.phase==='Running'?'run':(p.phase==='Pending'?'pend':'fail');
+            html+='<div class="prow"><span class="pdot '+dc+'"></span><span class="pname">'+shortPod(p.pod)+'</span></div>';
+          });
+          html+='</div>';
+        });
+        document.getElementById('pods').innerHTML=html;
+      }
+
       async function tick(){
         try{
           var d=await fetch('/metrics-data').then(function(r){return r.json();});
-          if(d.cpu!=null)bar('cpu-b','cpu-v',Math.round(d.cpu));
-          if(d.mem!=null)bar('mem-b','mem-v',Math.round(d.mem));
+          if(d.cpu!=null) bar('cpu-b','cpu-v',Math.round(d.cpu));
+          if(d.mem!=null) bar('mem-b','mem-v',Math.round(d.mem));
           var rv=d.rps||0;
           document.getElementById('rps').textContent=rv.toFixed(3)+'/s';
           buf.push(rv);buf.shift();drawSpark();
           document.getElementById('h5').textContent=Math.round(d.hits5m||0);
           document.getElementById('h1').textContent=Math.round(d.hits1h||0);
-          if(d.pods!=null)document.getElementById('n-p').textContent=Math.round(d.pods);
-          if(d.nodes!=null)document.getElementById('n-n').textContent=Math.round(d.nodes);
-          if(d.ns!=null)document.getElementById('n-s').textContent=Math.round(d.ns);
+          if(d.pods!=null) document.getElementById('n-p').textContent=Math.round(d.pods);
+          if(d.nodes!=null) document.getElementById('n-n').textContent=Math.round(d.nodes);
+          if(d.ns!=null)   document.getElementById('n-s').textContent=Math.round(d.ns);
+          renderPods(d.pod_list);
           var ings=d.ingress||[];
           document.getElementById('ing').innerHTML=ings.length
             ?ings.map(function(r){
                 return '<div class="irow"><div class="iname">'+(r.ingress||'default')+
                   '</div><div class="irps">'+parseFloat(r.rps).toFixed(3)+'/s</div></div>';
               }).join('')
-            :'<div class="irow"><div class="iname">no traffic yet</div></div>';
+            :'<div class="irow"><div class="iname" style="color:#333">no traffic yet</div></div>';
           document.getElementById('dot').className='dot';
           document.getElementById('sts').textContent='ONLINE';
           var t=new Date().toLocaleTimeString();
           document.getElementById('ts').textContent=t;
-          document.getElementById('footer').textContent='updated '+t+' · every 5s';
+          document.getElementById('footer').textContent='updated '+t+' \xb7 every 5s';
         }catch(e){
           document.getElementById('dot').className='dot err';
           document.getElementById('sts').textContent='ERROR';
