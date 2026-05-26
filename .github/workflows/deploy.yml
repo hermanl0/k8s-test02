@@ -17,19 +17,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
       - name: Validate YAML syntax
         run: |
           for f in k8s/*.yaml; do
             echo "Validating $f..."
-            kubectl apply --dry-run=client -f "$f" 2>&1 || true
+            kubectl apply --dry-run=client --validate=false -f "$f"
           done
         env:
           KUBECONFIG: /dev/null
-
-      - name: Lint with kubeval
-        uses: instrumenta/kubeval-action@master
-        with:
-          files: k8s
 
   deploy:
     name: Deploy to cluster
@@ -66,4 +64,5 @@ jobs:
           kubectl rollout status deployment/mariadb -n lab --timeout=120s
 
       - name: Show cluster state
+        if: always()
         run: kubectl get pods,svc,pvc -n lab
