@@ -75,8 +75,8 @@ jobs:
             --create-namespace \
             --values k8s/helm/kube-prometheus-stack-values.yaml \
             --set grafana.adminPassword="${{ secrets.GRAFANA_ADMIN_PASSWORD }}" \
-            --timeout 5m \
-            --wait
+            --timeout 10m \
+            --atomic
 
       - name: Show cluster state
         if: always()
