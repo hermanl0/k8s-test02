@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - "k8s/**"
+      - ".github/workflows/deploy.yml"
   pull_request:
     branches: [main]
     paths:
       - "k8s/**"
+  workflow_dispatch:
 
 jobs:
   validate:
