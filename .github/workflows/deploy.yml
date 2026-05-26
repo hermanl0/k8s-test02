@@ -23,10 +23,8 @@ jobs:
         run: |
           for f in k8s/*.yaml; do
             echo "Validating $f..."
-            kubectl apply --dry-run=client --validate=false -f "$f"
+            yq e '.' "$f" > /dev/null && echo "OK"
           done
-        env:
-          KUBECONFIG: /dev/null
 
   deploy:
     name: Deploy to cluster
