@@ -61,12 +61,14 @@ jobs:
           kubectl apply -f k8s/nginx.yaml
           kubectl apply -f k8s/uptimekuma.yaml
           kubectl apply -f k8s/doom.yaml
+          kubectl apply -f k8s/doom-dashboard.yaml
 
       - name: Verify rollout
         run: |
           kubectl rollout status deployment/nginx -n lab --timeout=120s
           kubectl rollout status deployment/mariadb -n lab --timeout=120s
           kubectl rollout status deployment/uptimekuma -n lab --timeout=120s
+          kubectl rollout status deployment/doom-dashboard -n lab --timeout=60s
 
       - name: Deploy monitoring stack
         run: |

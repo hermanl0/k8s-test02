@@ -44,9 +44,9 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: doom
+            name: doom-dashboard
             port:
-              number: 8000
+              number: 80
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress

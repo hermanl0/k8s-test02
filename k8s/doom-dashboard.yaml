@@ -1,0 +1,281 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: doom-dashboard-nginx
+  namespace: lab
+data:
+  default.conf: |
+    server {
+        listen 80;
+        server_name _;
+
+        location = / {
+            root /usr/share/nginx/html;
+            try_files /index.html =404;
+        }
+
+        location /doom/ {
+            proxy_pass http://doom:8000/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_hide_header X-Frame-Options;
+            proxy_read_timeout 60s;
+        }
+
+        location /prom/ {
+            proxy_pass http://kube-prometheus-stack-prometheus.monitoring:9090/;
+            proxy_set_header Host $host;
+            proxy_read_timeout 10s;
+        }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: doom-dashboard-html
+  namespace: lab
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <title>doom.hl0.dev</title>
+      <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        :root{
+          --red:#b81000;--rhi:#ff2200;--amb:#d08000;
+          --grn:#00a848;--dim:#484848;--bdr:#202020;
+          --bg:#080808;--bg2:#0e0e0e;--bg3:#161616;--tx:#a0a0a0
+        }
+        html,body{height:100%;background:var(--bg);color:var(--tx);
+          font-family:'Courier New',monospace;font-size:13px;overflow:hidden}
+        header{
+          height:38px;background:var(--bg2);border-bottom:2px solid var(--red);
+          display:flex;align-items:center;justify-content:space-between;padding:0 14px;
+          flex-shrink:0
+        }
+        .h-logo{color:var(--rhi);font-weight:bold;letter-spacing:4px;font-size:12px;
+          text-shadow:0 0 8px var(--rhi)}
+        .h-right{display:flex;align-items:center;gap:16px;font-size:10px;color:var(--dim)}
+        .dot{width:7px;height:7px;border-radius:50%;background:var(--grn);
+          box-shadow:0 0 6px var(--grn);display:inline-block;margin-right:5px;
+          animation:pulse 2s infinite}
+        .dot.err{background:var(--rhi);box-shadow:0 0 6px var(--rhi);animation:none}
+        .dot.init{background:var(--amb);box-shadow:0 0 6px var(--amb)}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+        #layout{display:flex;height:calc(100vh - 38px)}
+        #game{flex:1;background:#000;border-right:1px solid var(--bdr);overflow:hidden}
+        #game iframe{width:100%;height:100%;border:none;display:block}
+        #panel{
+          width:258px;min-width:258px;background:var(--bg2);
+          display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden
+        }
+        .sec{border-bottom:1px solid var(--bdr);padding:10px 12px}
+        .sec-hd{
+          font-size:9px;letter-spacing:2px;color:var(--dim);text-transform:uppercase;
+          margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid var(--bdr)
+        }
+        .brow{display:flex;align-items:center;margin-bottom:5px}
+        .bl{width:30px;font-size:10px;color:var(--dim)}
+        .bt{flex:1;height:5px;background:var(--bg3);margin:0 7px;border:1px solid #1a1a1a;
+          border-radius:1px}
+        .bf{height:100%;background:var(--grn);transition:width .6s ease;border-radius:1px}
+        .bf.w{background:var(--amb)}.bf.c{background:var(--rhi)}
+        .bv{width:34px;text-align:right;font-size:10px;color:var(--tx)}
+        .nums{display:flex;justify-content:space-around;padding:4px 0}
+        .nb{text-align:center}
+        .nv{font-size:26px;color:var(--amb);line-height:1.1;
+          text-shadow:0 0 8px rgba(208,128,0,.3)}
+        .nl{font-size:9px;color:var(--dim);letter-spacing:1px;margin-top:1px}
+        .rrow{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:5px}
+        .rl{font-size:10px;color:var(--dim)}
+        .rv{font-size:18px;color:var(--amb);text-shadow:0 0 6px rgba(208,128,0,.3)}
+        .rv.sm{font-size:13px}
+        #spark{display:flex;align-items:flex-end;gap:2px;height:32px;margin-top:8px}
+        .sb{flex:1;background:var(--red);min-height:2px;border-radius:1px 1px 0 0;
+          transition:height .4s ease}
+        .irow{display:flex;justify-content:space-between;margin-bottom:4px;font-size:10px}
+        .iname{color:var(--dim);flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+        .irps{color:var(--amb);margin-left:8px;flex-shrink:0}
+        #footer{margin-top:auto;padding:8px 12px;font-size:9px;color:#252525;
+          border-top:1px solid var(--bdr);flex-shrink:0}
+        ::-webkit-scrollbar{width:4px}
+        ::-webkit-scrollbar-track{background:var(--bg2)}
+        ::-webkit-scrollbar-thumb{background:var(--bdr)}
+      </style>
+    </head>
+    <body>
+    <header>
+      <div class="h-logo">&#9760; DOOM &mdash; OPS CENTER</div>
+      <div class="h-right">
+        <span><span class="dot init" id="dot"></span><span id="sts">INIT</span></span>
+        <span id="ts">&mdash;</span>
+      </div>
+    </header>
+    <div id="layout">
+      <div id="game">
+        <iframe src="/doom/" allowfullscreen title="DOOM"></iframe>
+      </div>
+      <div id="panel">
+        <div class="sec">
+          <div class="sec-hd">&#9889; node resources</div>
+          <div class="brow">
+            <div class="bl">CPU</div>
+            <div class="bt"><div class="bf" id="cpu-b" style="width:0"></div></div>
+            <div class="bv" id="cpu-v">&mdash;</div>
+          </div>
+          <div class="brow">
+            <div class="bl">MEM</div>
+            <div class="bt"><div class="bf" id="mem-b" style="width:0"></div></div>
+            <div class="bv" id="mem-v">&mdash;</div>
+          </div>
+        </div>
+        <div class="sec">
+          <div class="sec-hd">&#128128; doom traffic</div>
+          <div class="rrow"><div class="rl">REQ / SEC</div><div class="rv" id="rps">&mdash;</div></div>
+          <div class="rrow"><div class="rl">HITS &middot; 5 MIN</div><div class="rv sm" id="h5">&mdash;</div></div>
+          <div class="rrow"><div class="rl">HITS &middot; 1 HR</div><div class="rv sm" id="h1">&mdash;</div></div>
+          <div id="spark"></div>
+        </div>
+        <div class="sec">
+          <div class="sec-hd">&#128760; fleet</div>
+          <div class="nums">
+            <div class="nb"><div class="nv" id="n-p">&mdash;</div><div class="nl">PODS</div></div>
+            <div class="nb"><div class="nv" id="n-n">&mdash;</div><div class="nl">NODES</div></div>
+            <div class="nb"><div class="nv" id="n-s">&mdash;</div><div class="nl">NS</div></div>
+          </div>
+        </div>
+        <div class="sec" style="flex:1">
+          <div class="sec-hd">&#127760; all ingress &middot; req/s</div>
+          <div id="ing"><div class="irow"><div class="iname" style="color:#222">loading&hellip;</div></div></div>
+        </div>
+        <div id="footer">auto-refresh every 5s</div>
+      </div>
+    </div>
+    <script>
+      var Q='/prom/api/v1/query', buf=new Array(26).fill(0);
+      async function get(q){
+        var r=await fetch(Q+'?query='+encodeURIComponent(q));
+        var j=await r.json();
+        if(j.status!=='success')return null;
+        var rs=j.data.result;
+        return rs.length?parseFloat(rs[0].value[1]):null;
+      }
+      async function getAll(q){
+        var r=await fetch(Q+'?query='+encodeURIComponent(q));
+        var j=await r.json();
+        return j.status==='success'?j.data.result:[];
+      }
+      function bar(bi,vi,pct){
+        var b=document.getElementById(bi);
+        b.style.width=pct+'%';
+        b.className='bf'+(pct>=85?' c':pct>=65?' w':'');
+        document.getElementById(vi).textContent=pct+'%';
+      }
+      function drawSpark(){
+        var el=document.getElementById('spark');
+        var mx=Math.max.apply(null,buf.concat([0.0001]));
+        el.innerHTML=buf.map(function(v){
+          return '<div class="sb" style="height:'+Math.max(2,(v/mx*30)).toFixed(1)+'px"></div>';
+        }).join('');
+      }
+      async function tick(){
+        try{
+          var cpu=await get('100 - avg(rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100');
+          if(cpu!==null)bar('cpu-b','cpu-v',Math.round(cpu));
+          var mem=await get('(1 - avg(node_memory_MemAvailable_bytes)/avg(node_memory_MemTotal_bytes)) * 100');
+          if(mem!==null)bar('mem-b','mem-v',Math.round(mem));
+          var rps=await get('sum(rate(nginx_ingress_controller_requests{ingress="doom-ingress"}[2m])) or vector(0)');
+          var rv=rps!==null?rps:0;
+          document.getElementById('rps').textContent=rv.toFixed(3)+'/s';
+          buf.push(rv);buf.shift();drawSpark();
+          var h5=await get('sum(increase(nginx_ingress_controller_requests{ingress="doom-ingress"}[5m])) or vector(0)');
+          document.getElementById('h5').textContent=Math.round(h5||0);
+          var h1=await get('sum(increase(nginx_ingress_controller_requests{ingress="doom-ingress"}[1h])) or vector(0)');
+          document.getElementById('h1').textContent=Math.round(h1||0);
+          var pods=await get('sum(kube_pod_status_phase{phase="Running"})');
+          if(pods!==null)document.getElementById('n-p').textContent=Math.round(pods);
+          var nodes=await get('count(kube_node_info)');
+          if(nodes!==null)document.getElementById('n-n').textContent=Math.round(nodes);
+          var ns=await get('count(kube_namespace_labels)');
+          if(ns!==null)document.getElementById('n-s').textContent=Math.round(ns);
+          var ings=await getAll('sort_desc(sum by (ingress)(rate(nginx_ingress_controller_requests[2m])))');
+          document.getElementById('ing').innerHTML=ings.length
+            ?ings.map(function(r){
+                return '<div class="irow"><div class="iname">'+(r.metric.ingress||'default')+
+                  '</div><div class="irps">'+parseFloat(r.value[1]).toFixed(3)+'/s</div></div>';
+              }).join('')
+            :'<div class="irow"><div class="iname">no traffic yet</div></div>';
+          document.getElementById('dot').className='dot';
+          document.getElementById('sts').textContent='ONLINE';
+          var t=new Date().toLocaleTimeString();
+          document.getElementById('ts').textContent=t;
+          document.getElementById('footer').textContent='updated '+t+' · every 5s';
+        }catch(e){
+          document.getElementById('dot').className='dot err';
+          document.getElementById('sts').textContent='ERROR';
+          console.error(e);
+        }
+      }
+      drawSpark();tick();setInterval(tick,5000);
+    </script>
+    </body>
+    </html>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: doom-dashboard
+  namespace: lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: doom-dashboard
+  template:
+    metadata:
+      labels:
+        app: doom-dashboard
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.27-alpine
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            cpu: 50m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/conf.d/default.conf
+          subPath: default.conf
+        - name: html
+          mountPath: /usr/share/nginx/html/index.html
+          subPath: index.html
+      volumes:
+      - name: nginx-config
+        configMap:
+          name: doom-dashboard-nginx
+      - name: html
+        configMap:
+          name: doom-dashboard-html
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: doom-dashboard
+  namespace: lab
+spec:
+  selector:
+    app: doom-dashboard
+  ports:
+  - port: 80
+    targetPort: 80
