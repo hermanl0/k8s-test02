@@ -160,7 +160,6 @@ jobs:
 
           upsert_dns "test02.hl0.dev"
           upsert_dns "grafana.hl0.dev"
-          upsert_dns "status.hl0.dev"
 
       - name: Apply Ingress resources
         run: kubectl apply -f k8s/ingress.yaml
