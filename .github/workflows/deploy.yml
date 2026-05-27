@@ -203,16 +203,17 @@ jobs:
             --dry-run=client -o yaml | kubectl apply -f -
           kubectl apply -f k8s/cert-manager/clusterissuer.yaml
 
-      - name: Deploy ingress-nginx
+      - name: Deploy NGINX Gateway Fabric
         run: |
-          helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+          kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml
+          helm repo add nginx-stable https://helm.nginx.com/stable
           helm repo update
-          helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
-            --namespace ingress-nginx \
+          helm upgrade --install nginx-gateway-fabric nginx-stable/nginx-gateway-fabric \
+            --namespace nginx-gateway \
             --create-namespace \
-            --values k8s/helm/ingress-nginx-values.yaml \
+            --values k8s/helm/nginx-gateway-fabric-values.yaml \
             --timeout 5m
-          kubectl rollout status deployment/ingress-nginx-controller -n ingress-nginx --timeout=120s
+          kubectl rollout status deployment/nginx-gateway-fabric -n nginx-gateway --timeout=120s
 
       - name: Update Cloudflare DNS
         run: |
@@ -220,7 +221,7 @@ jobs:
           CF_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}"
 
           for i in $(seq 1 30); do
-            INGRESS_IP=$(kubectl get svc ingress-nginx-controller -n ingress-nginx \
+            INGRESS_IP=$(kubectl get svc nginx-gateway-fabric -n nginx-gateway \
               -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
             [ -n "$INGRESS_IP" ] && break
             echo "Waiting for LoadBalancer IP... ($i/30)"
@@ -261,8 +262,10 @@ jobs:
           upsert_dns "doom.hl0.dev"
           upsert_dns "status.hl0.dev"
 
-      - name: Apply Ingress resources
-        run: kubectl apply -f k8s/ingress.yaml
+      - name: Apply Gateway API resources
+        run: |
+          kubectl apply -f k8s/certificates.yaml
+          kubectl apply -f k8s/gateway.yaml
 
       - name: Show cluster state
         if: always()
@@ -271,6 +274,7 @@ jobs:
           echo "---"
           kubectl get pods,svc,pvc -n monitoring
           echo "---"
-          kubectl get ingress -A
+          kubectl get gateway,httproute -A 2>/dev/null || true
+          kubectl get certificate -n lab 2>/dev/null || true
           echo "---"
           kubectl get certificate -A 2>/dev/null || true
