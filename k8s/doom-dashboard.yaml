@@ -183,7 +183,7 @@ data:
         #game iframe{width:100%;height:100%;border:none;display:block}
 
         #panel{
-          width:460px;min-width:460px;background:var(--bg2);
+          width:360px;min-width:360px;background:var(--bg2);
           display:flex;flex-direction:column;overflow:hidden
         }
         .sec{border-bottom:1px solid var(--bdr);padding:12px 14px;flex-shrink:0}
