@@ -48,10 +48,6 @@ grafana:
           path: /var/lib/grafana/dashboards/default
   dashboards:
     default:
-      ingress-nginx:
-        gnetId: 9614
-        revision: 9
-        datasource: Prometheus
       node-exporter-full:
         gnetId: 1860
         revision: 37
@@ -89,6 +85,8 @@ alertmanager:
 
 nodeExporter:
   enabled: true
+  extraArgs:
+    - --no-collector.infiniband
 
 kubeStateMetrics:
   enabled: true
