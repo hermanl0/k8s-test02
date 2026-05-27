@@ -59,6 +59,8 @@ data:
     SNOW_URL  = os.environ.get('SNOW_URL', '').rstrip('/')
     SNOW_USER = os.environ.get('SNOW_USER', '')
     SNOW_PASS = os.environ.get('SNOW_PASS', '')
+    UK_URL    = "http://uptimekuma.lab:3001"
+    UK_KEY    = os.environ.get('UPTIME_KUMA_API_KEY', '')
 
     SCALARS = {
         "cpu":    '100 - avg(rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100',
@@ -266,6 +268,25 @@ data:
                 print(f"[snow] alert eval ({rule['key']}): {e}", flush=True)
         return firing
 
+    def _fetch_uptime():
+        if not UK_KEY:
+            return []
+        req = urllib.request.Request(
+            UK_URL + "/api/v1/monitors",
+            headers={"Authorization": f"Bearer {UK_KEY}", "Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            data = json.load(r)
+        out = []
+        for m in data.get("monitors", []):
+            hb = (m.get("heartBeatList") or [{}])[-1]
+            out.append({
+                "name":   m.get("name", ""),
+                "status": hb.get("status", 0),
+                "ping":   hb.get("ping"),
+                "up24":   (m.get("uptime") or {}).get("24"),
+            })
+        return out
+
     def _sync_snow():
         if not (SNOW_URL and SNOW_USER and SNOW_PASS):
             return
@@ -314,12 +335,13 @@ data:
             with _olock:
                 _open.pop(key, None)
 
-    _snow_tick  = 0
-    _snow_cache = {}
-    _geo_cache  = []
+    _snow_tick    = 0
+    _snow_cache   = {}
+    _geo_cache    = []
+    _uptime_cache = []
 
     def _loop():
-        global _snow_tick, _snow_cache, _geo_cache
+        global _snow_tick, _snow_cache, _geo_cache, _uptime_cache
         while True:
             try:
                 data = _fetch()
@@ -339,11 +361,17 @@ data:
                         _geo_cache[:] = _fetch_geo()
                     except Exception as e:
                         print(f"[geo] fetch: {e}", flush=True)
+                    try:
+                        _uptime_cache[:] = _fetch_uptime()
+                    except Exception as e:
+                        print(f"[uk] fetch: {e}", flush=True)
                 _snow_tick += 1
                 if _snow_cache:
                     data['snow'] = dict(_snow_cache)
                 if _geo_cache:
                     data['geo'] = list(_geo_cache)
+                if _uptime_cache:
+                    data['uptime'] = list(_uptime_cache)
                 with _lock:
                     _cache.clear()
                     _cache.update(data)
@@ -458,6 +486,14 @@ data:
         .irow{display:flex;justify-content:space-between;margin-bottom:6px;font-size:14px}
         .iname{color:var(--dim);flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
         .irps{color:var(--amb);margin-left:10px;flex-shrink:0}
+        .uk-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+        .uk-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+        .uk-dot.up{background:var(--grn);box-shadow:0 0 4px var(--grn)}
+        .uk-dot.down{background:var(--rhi);box-shadow:0 0 4px var(--rhi);animation:pulse 1.5s infinite}
+        .uk-dot.unk{background:var(--dim)}
+        .uk-name{flex:1;font-size:13px;color:var(--tx);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+        .uk-ping{font-size:12px;color:var(--amb);flex-shrink:0;font-variant-numeric:tabular-nums;width:46px;text-align:right}
+        .uk-up{font-size:10px;color:var(--dim);flex-shrink:0;width:40px;text-align:right}
         .geo-row{display:flex;align-items:center;gap:6px;margin-bottom:5px}
         .geo-flag{font-size:14px;flex-shrink:0;width:20px;text-align:center}
         .geo-ip{font-size:11px;color:var(--dim);flex-shrink:0;width:108px;font-variant-numeric:tabular-nums}
@@ -513,6 +549,10 @@ data:
             <div class="bt"><div class="bf" id="mem-b" style="width:0"></div></div>
             <div class="bv" id="mem-v">&mdash;</div>
           </div>
+        </div>
+        <div class="sec">
+          <div class="sec-hd">&#128994; endpoint health</div>
+          <div id="uk-list"><div class="uk-row"><span class="uk-name" style="color:#333">loading&hellip;</span></div></div>
         </div>
         <div class="sec">
           <div class="sec-hd">&#128128; doom traffic</div>
@@ -648,6 +688,21 @@ data:
           document.getElementById('h5').textContent=Math.round(d.hits5m||0);
           document.getElementById('h1').textContent=Math.round(d.hits1h||0);
           renderPods(d.pod_list);
+          if(d.uptime&&d.uptime.length){
+            document.getElementById('uk-list').innerHTML=d.uptime.map(function(m){
+              var dc=m.status===1?'up':(m.status===0?'down':'unk');
+              var ping=m.ping!=null?m.ping+'ms':'—';
+              var up=m.up24!=null?m.up24.toFixed(1)+'%':'';
+              return '<div class="uk-row">'+
+                '<span class="uk-dot '+dc+'"></span>'+
+                '<span class="uk-name">'+m.name+'</span>'+
+                '<span class="uk-ping">'+ping+'</span>'+
+                '<span class="uk-up">'+up+'</span></div>';
+            }).join('');
+          } else if(d.uptime){
+            document.getElementById('uk-list').innerHTML=
+              '<div class="uk-row"><span class="uk-name" style="color:#555">no monitors yet</span></div>';
+          }
           if(d.geo&&d.geo.length){
             document.getElementById('geo-list').innerHTML=d.geo.map(function(g){
               var loc=[g.city,g.country].filter(Boolean).join(', ')||'—';
@@ -767,6 +822,11 @@ spec:
             secretKeyRef:
               name: servicenow-creds
               key: SNOW_PASS
+        - name: UPTIME_KUMA_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: uptimekuma-creds
+              key: UPTIME_KUMA_API_KEY
         securityContext:
           runAsNonRoot: true
           runAsUser: 65534

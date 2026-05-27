@@ -95,6 +95,49 @@ jobs:
           kubectl rollout status deployment/uptimekuma -n lab --timeout=120s
           kubectl rollout status deployment/doom-dashboard -n lab --timeout=60s
 
+      - name: Configure Uptime Kuma monitors
+        run: |
+          python3 << 'PYEOF'
+          import json, os, time, urllib.request, urllib.error
+
+          UK_URL   = "https://status.hl0.dev"
+          UK_TOKEN = os.environ["UK_TOKEN"]
+          HDRS     = {"Authorization": f"Bearer {UK_TOKEN}",
+                      "Content-Type": "application/json", "Accept": "application/json"}
+          MONITORS = [
+              ("doom.hl0.dev",    "https://doom.hl0.dev"),
+              ("grafana.hl0.dev", "https://grafana.hl0.dev"),
+              ("test02.hl0.dev",  "https://test02.hl0.dev"),
+              ("status.hl0.dev",  "https://status.hl0.dev"),
+          ]
+
+          for attempt in range(12):
+              try:
+                  req = urllib.request.Request(f"{UK_URL}/api/v1/monitors", headers=HDRS)
+                  with urllib.request.urlopen(req, timeout=5) as r:
+                      existing = {m["name"] for m in json.load(r).get("monitors", [])}
+                  break
+              except Exception as e:
+                  print(f"  waiting for Uptime Kuma ({attempt+1}/12): {e}")
+                  time.sleep(5)
+          else:
+              print("Uptime Kuma not reachable — skipping monitor setup")
+              exit(0)
+
+          for name, url in MONITORS:
+              if name in existing:
+                  print(f"  exists:  {name}")
+                  continue
+              body = json.dumps({"type": "http", "name": name, "url": url,
+                                 "interval": 60, "retryInterval": 60, "maxretries": 1}).encode()
+              req = urllib.request.Request(f"{UK_URL}/api/v1/monitors",
+                                           data=body, headers=HDRS, method="POST")
+              with urllib.request.urlopen(req, timeout=10) as r:
+                  print(f"  created: {name} → {json.load(r).get('msg','ok')}")
+          PYEOF
+        env:
+          UK_TOKEN: ${{ secrets.UPTIME_KUMA_API_KEY }}
+
       - name: Create Grafana admin secret
         run: |
           kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -

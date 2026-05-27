@@ -101,6 +101,13 @@ spec:
     - port: 8000
       protocol: TCP
   - to:
+    - podSelector:
+        matchLabels:
+          app: uptimekuma
+    ports:
+    - port: 3001
+      protocol: TCP
+  - to:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: monitoring
@@ -132,7 +139,7 @@ spec:
     - port: 3306
       protocol: TCP
 ---
-# uptimekuma: accept traffic from ingress-nginx.
+# uptimekuma: accept traffic from ingress-nginx and doom-dashboard (metrics query).
 # Egress is fully open — uptime-kuma pings arbitrary external endpoints.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -151,6 +158,9 @@ spec:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: ingress-nginx
+    - podSelector:
+        matchLabels:
+          app: doom-dashboard
     ports:
     - port: 3001
       protocol: TCP
