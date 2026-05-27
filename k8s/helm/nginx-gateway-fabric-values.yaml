@@ -1,0 +1,35 @@
+service:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: /healthz
+
+nginxGateway:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+  config:
+    logging:
+      level: info
+
+nginx:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+
+metrics:
+  enable: true
+  port: 9113
+
+serviceMonitor:
+  enable: true
+  labels:
+    release: kube-prometheus-stack

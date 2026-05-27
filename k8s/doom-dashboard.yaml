@@ -66,20 +66,19 @@ data:
     SCALARS = {
         "cpu":    '100 - avg(rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100',
         "mem":    '(1 - avg(node_memory_MemAvailable_bytes)/avg(node_memory_MemTotal_bytes)) * 100',
-        "rps":    'sum(rate(nginx_ingress_controller_requests{ingress="doom-ingress"}[2m])) or vector(0)',
-        "hits5m": 'sum(increase(nginx_ingress_controller_requests{ingress="doom-ingress"}[5m])) or vector(0)',
-        "hits1h": 'sum(increase(nginx_ingress_controller_requests{ingress="doom-ingress"}[1h])) or vector(0)',
+        "rps":    'sum(rate(container_network_receive_bytes_total{namespace="lab",pod=~"doom-.+",interface!="lo"}[2m]))',
+        "hits5m": 'sum(increase(container_network_receive_bytes_total{namespace="lab",pod=~"doom-.+",interface!="lo"}[5m]))',
+        "hits1h": 'sum(increase(container_network_receive_bytes_total{namespace="lab",pod=~"doom-.+",interface!="lo"}[1h]))',
         "pods":   'sum(kube_pod_status_phase{phase="Running"})',
         "nodes":  'count(kube_node_info)',
         "ns":     'count(kube_namespace_labels)',
     }
-    INGRESS_Q = 'sort_desc(sum by (ingress)(rate(nginx_ingress_controller_requests[2m])))'
+    INGRESS_Q = 'sort_desc(sum by (pod)(rate(container_network_receive_bytes_total{namespace="lab",interface!="lo"}[2m])))'
     PODS_Q    = 'kube_pod_status_phase == 1'
     LOKI      = "http://loki-stack.monitoring:3100"
     CHART_QUERIES = {
         "doom_cpu": 'rate(container_cpu_usage_seconds_total{container="doom",namespace="lab"}[1m]) * 100',
         "doom_rx":  'sum(rate(container_network_receive_bytes_total{namespace="lab",pod=~"doom-.+",interface!="lo"}[1m]))',
-        "doom_rps": 'sum(rate(nginx_ingress_controller_requests{ingress="doom-ingress"}[1m])) or vector(0)',
     }
 
     # Match only the leading $remote_addr in nginx access log lines.
@@ -209,8 +208,8 @@ data:
                 out[k] = None
         try:
             out["ingress"] = [
-                {"ingress": r["metric"].get("ingress", "default"),
-                 "rps": float(r["value"][1])}
+                {"pod": r["metric"].get("pod", "unknown"),
+                 "rx": float(r["value"][1])}
                 for r in _query(INGRESS_Q)
             ]
         except Exception:
@@ -715,13 +714,13 @@ data:
         </div>
         <div class="sec">
           <div class="sec-hd">&#128128; doom traffic</div>
-          <div class="rrow"><div class="rl">REQ / SEC</div><div class="rv" id="rps">&mdash;</div></div>
-          <div class="rrow"><div class="rl">HITS &middot; 5 MIN</div><div class="rv sm" id="h5">&mdash;</div></div>
-          <div class="rrow"><div class="rl">HITS &middot; 1 HR</div><div class="rv sm" id="h1">&mdash;</div></div>
+          <div class="rrow"><div class="rl">RX BYTES / S</div><div class="rv" id="rps">&mdash;</div></div>
+          <div class="rrow"><div class="rl">RX &middot; 5 MIN</div><div class="rv sm" id="h5">&mdash;</div></div>
+          <div class="rrow"><div class="rl">RX &middot; 1 HR</div><div class="rv sm" id="h1">&mdash;</div></div>
           <div id="spark"></div>
         </div>
         <div class="sec">
-          <div class="sec-hd">&#127760; ingress &middot; req/s</div>
+          <div class="sec-hd">&#127760; lab &middot; net rx/s</div>
           <div id="ing"><div class="irow"><div class="iname" style="color:#222">loading&hellip;</div></div></div>
         </div>
         <div id="log-sec">
@@ -795,6 +794,13 @@ data:
         return n;
       }
 
+      function fmtBytes(n){
+        if(n==null||isNaN(n)) return '—';
+        if(n<1024) return Math.round(n)+'B';
+        if(n<1048576) return (n/1024).toFixed(1)+'KB';
+        if(n<1073741824) return (n/1048576).toFixed(1)+'MB';
+        return (n/1073741824).toFixed(2)+'GB';
+      }
       function bar(bi,vi,pct){
         var b=document.getElementById(bi);
         b.style.width=pct+'%';
@@ -888,11 +894,7 @@ data:
           ctx.shadowBlur = 6; ctx.shadowColor = color;
           ctx.stroke(); ctx.shadowBlur = 0;
         }
-        // doom req/s — auto-scaled, drawn first (bottom layer)
-        var drps = chart.doom_rps || [];
-        var drpsMax = drps.reduce(function(a, p){ return Math.max(a, p[1]); }, 0.01);
-        drawSeries(drps, drpsMax, '#d08000', 'rgba(208,128,0,0.08)');
-        // doom network Rx — auto-scaled bytes/s (convert to KB for labelling, scale same)
+        // doom network Rx — auto-scaled bytes/s
         var drx = chart.doom_rx || [];
         var drxMax = drx.reduce(function(a, p){ return Math.max(a, p[1]); }, 1);
         drawSeries(drx, drxMax, '#3366cc', 'rgba(51,102,204,0.08)');
@@ -921,10 +923,10 @@ data:
             en.textContent=Math.round(d.nodes);en.className='sv';
           }
           var rv=d.rps||0;
-          document.getElementById('rps').textContent=rv.toFixed(3)+'/s';
+          document.getElementById('rps').textContent=fmtBytes(rv)+'/s';
           buf.push(rv);buf.shift();drawSpark();
-          document.getElementById('h5').textContent=Math.round(d.hits5m||0);
-          document.getElementById('h1').textContent=Math.round(d.hits1h||0);
+          document.getElementById('h5').textContent=fmtBytes(d.hits5m||0);
+          document.getElementById('h1').textContent=fmtBytes(d.hits1h||0);
           renderPods(d.pod_list);
           if(d.uptime&&d.uptime.length){
             document.getElementById('uk-list').innerHTML=d.uptime.map(function(m){
@@ -989,8 +991,8 @@ data:
           var ings=d.ingress||[];
           document.getElementById('ing').innerHTML=ings.length
             ?ings.map(function(r){
-                return '<div class="irow"><div class="iname">'+(r.ingress||'default')+
-                  '</div><div class="irps">'+parseFloat(r.rps).toFixed(3)+'/s</div></div>';
+                return '<div class="irow"><div class="iname">'+(r.pod||'unknown')+
+                  '</div><div class="irps">'+fmtBytes(r.rx)+'/s</div></div>';
               }).join('')
             :'<div class="irow"><div class="iname" style="color:#333">no traffic yet</div></div>';
           document.getElementById('dot').className='dot';

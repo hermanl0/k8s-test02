@@ -1,0 +1,157 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: nginx
+spec:
+  controllerName: gateway.nginx.org/nginx-gateway-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: lab-gateway
+  namespace: lab
+spec:
+  gatewayClassName: nginx
+  listeners:
+  - name: http
+    port: 80
+    protocol: HTTP
+    allowedRoutes:
+      namespaces:
+        from: All
+
+  - name: test02-https
+    hostname: test02.hl0.dev
+    port: 443
+    protocol: HTTPS
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - kind: Secret
+        name: test02-tls
+    allowedRoutes:
+      namespaces:
+        from: All
+
+  - name: doom-https
+    hostname: doom.hl0.dev
+    port: 443
+    protocol: HTTPS
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - kind: Secret
+        name: doom-tls
+    allowedRoutes:
+      namespaces:
+        from: All
+
+  - name: status-https
+    hostname: status.hl0.dev
+    port: 443
+    protocol: HTTPS
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - kind: Secret
+        name: status-tls
+    allowedRoutes:
+      namespaces:
+        from: All
+
+  - name: grafana-https
+    hostname: grafana.hl0.dev
+    port: 443
+    protocol: HTTPS
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - kind: Secret
+        name: grafana-tls
+    allowedRoutes:
+      namespaces:
+        from: All
+---
+# Redirect all HTTP traffic to HTTPS
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: http-redirect
+  namespace: lab
+spec:
+  parentRefs:
+  - name: lab-gateway
+    sectionName: http
+  rules:
+  - filters:
+    - type: RequestRedirect
+      requestRedirect:
+        scheme: https
+        statusCode: 301
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: test02-route
+  namespace: lab
+spec:
+  parentRefs:
+  - name: lab-gateway
+    sectionName: test02-https
+  hostnames:
+  - test02.hl0.dev
+  rules:
+  - backendRefs:
+    - name: nginx
+      port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: doom-route
+  namespace: lab
+spec:
+  parentRefs:
+  - name: lab-gateway
+    sectionName: doom-https
+  hostnames:
+  - doom.hl0.dev
+  rules:
+  - backendRefs:
+    - name: doom-dashboard
+      port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: status-route
+  namespace: lab
+spec:
+  parentRefs:
+  - name: lab-gateway
+    sectionName: status-https
+  hostnames:
+  - status.hl0.dev
+  rules:
+  - backendRefs:
+    - name: uptimekuma
+      port: 3001
+---
+# Grafana is in the monitoring namespace; parentRef explicitly names the lab-gateway namespace.
+# The gateway's allowedRoutes.namespaces.from: All permits this attachment.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: grafana-route
+  namespace: monitoring
+spec:
+  parentRefs:
+  - name: lab-gateway
+    namespace: lab
+    sectionName: grafana-https
+  hostnames:
+  - grafana.hl0.dev
+  rules:
+  - backendRefs:
+    - name: kube-prometheus-stack-grafana
+      port: 80
