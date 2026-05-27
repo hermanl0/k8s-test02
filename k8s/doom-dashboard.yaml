@@ -77,9 +77,9 @@ data:
     PODS_Q    = 'kube_pod_status_phase == 1'
     LOKI      = "http://loki-stack.monitoring:3100"
     CHART_QUERIES = {
-        "cpu": '(1 - avg(rate(node_cpu_seconds_total{mode="idle"}[2m]))) * 100',
-        "mem": '(1 - avg(node_memory_MemAvailable_bytes)/avg(node_memory_MemTotal_bytes)) * 100',
-        "rps": 'sum(rate(nginx_ingress_controller_requests{ingress="doom-ingress"}[2m]))*60 or vector(0)',
+        "doom_cpu": 'rate(container_cpu_usage_seconds_total{container="doom",namespace="lab"}[1m]) * 100',
+        "doom_rx":  'sum(rate(container_network_receive_bytes_total{namespace="lab",pod=~"doom-.+",interface!="lo"}[1m]))',
+        "doom_rps": 'sum(rate(nginx_ingress_controller_requests{ingress="doom-ingress"}[1m])) or vector(0)',
     }
 
     # Match only the leading $remote_addr in nginx access log lines.
@@ -331,8 +331,8 @@ data:
 
     def _fetch_chart():
         end   = int(time.time())
-        start = end - 30 * 60
-        step  = 60
+        start = end - 5 * 60   # 5-minute live window
+        step  = 10             # 10-second steps
         out   = {}
         for key, q in CHART_QUERIES.items():
             url = (PROM_RANGE + "?query=" + urllib.parse.quote(q)
@@ -428,13 +428,13 @@ data:
                         _uptime_cache[:] = _fetch_uptime()
                     except Exception as e:
                         print(f"[uk] fetch: {e}", flush=True)
-                    try:
-                        c = _fetch_chart()
-                        _chart_cache.clear()
-                        _chart_cache.update(c)
-                    except Exception as e:
-                        print(f"[chart] fetch: {e}", flush=True)
                 _snow_tick += 1
+                try:
+                    c = _fetch_chart()
+                    _chart_cache.clear()
+                    _chart_cache.update(c)
+                except Exception as e:
+                    print(f"[chart] fetch: {e}", flush=True)
                 if _snow_cache:
                     data['snow'] = dict(_snow_cache)
                 if _geo_cache:
@@ -656,11 +656,11 @@ data:
         <iframe src="/doom/" allowfullscreen title="DOOM"></iframe>
         <div id="chart-panel">
           <div id="chart-hd">
-            <span>&#128200; cluster metrics &middot; 30m</span>
+            <span>&#9760; doom server &middot; live 5m</span>
             <span class="ch-leg">
               <span><span class="ch-dot" style="background:var(--grn)"></span>cpu%</span>
-              <span><span class="ch-dot" style="background:var(--amb)"></span>mem%</span>
-              <span><span class="ch-dot" style="background:#4488ff"></span>req/min</span>
+              <span><span class="ch-dot" style="background:#4488ff"></span>rx kb/s</span>
+              <span><span class="ch-dot" style="background:var(--amb)"></span>req/s</span>
             </span>
           </div>
           <canvas id="mchart" height="118"></canvas>
@@ -785,7 +785,7 @@ data:
         var ref = (chart && chart.cpu && chart.cpu.length) ? chart.cpu : (chart && chart.mem ? chart.mem : []);
         if(ref.length >= 2){
           ctx.fillStyle = '#2a2a2a'; ctx.font = '8px monospace';
-          ctx.textAlign = 'left';  ctx.fillText('30m ago', 2, H - 2);
+          ctx.textAlign = 'left';  ctx.fillText('5m ago', 2, H - 2);
           ctx.textAlign = 'right'; ctx.fillText('now', W - 2, H - 2);
           ctx.textAlign = 'left';
         }
@@ -811,12 +811,16 @@ data:
           ctx.shadowBlur = 6; ctx.shadowColor = color;
           ctx.stroke(); ctx.shadowBlur = 0;
         }
-        // req/min — auto-scaled to its own max so low traffic still shows shape
-        var rps = chart.rps || [];
-        var rpsMax = rps.reduce(function(a, p){ return Math.max(a, p[1]); }, 1);
-        drawSeries(rps, rpsMax, '#3366cc', 'rgba(51,102,204,0.07)');
-        drawSeries(chart.mem || [], 100, '#d08000', 'rgba(208,128,0,0.10)');
-        drawSeries(chart.cpu || [], 100, '#00a848', 'rgba(0,168,72,0.10)');
+        // doom req/s — auto-scaled, drawn first (bottom layer)
+        var drps = chart.doom_rps || [];
+        var drpsMax = drps.reduce(function(a, p){ return Math.max(a, p[1]); }, 0.01);
+        drawSeries(drps, drpsMax, '#d08000', 'rgba(208,128,0,0.08)');
+        // doom network Rx — auto-scaled bytes/s (convert to KB for labelling, scale same)
+        var drx = chart.doom_rx || [];
+        var drxMax = drx.reduce(function(a, p){ return Math.max(a, p[1]); }, 1);
+        drawSeries(drx, drxMax, '#3366cc', 'rgba(51,102,204,0.08)');
+        // doom CPU% — fixed 0–100 scale, drawn on top
+        drawSeries(chart.doom_cpu || [], 100, '#00a848', 'rgba(0,168,72,0.11)');
       }
       window.addEventListener('resize', function(){ if(lastChart) drawChart(lastChart); });
 
