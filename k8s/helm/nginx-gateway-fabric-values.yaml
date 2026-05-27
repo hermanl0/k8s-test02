@@ -5,6 +5,8 @@ service:
     service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: /healthz
 
 nginxGateway:
+  snippetsFilters:
+    enable: true
   resources:
     requests:
       cpu: 100m

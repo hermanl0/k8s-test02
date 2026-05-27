@@ -28,7 +28,7 @@ spec:
     - port: 53
       protocol: TCP
 ---
-# nginx: accept traffic from ingress-nginx only.
+# nginx: accept traffic from nginx-gateway only.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -44,7 +44,7 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
-          kubernetes.io/metadata.name: ingress-nginx
+          kubernetes.io/metadata.name: nginx-gateway
     ports:
     - port: 8080
       protocol: TCP
@@ -70,7 +70,7 @@ spec:
     - port: 8000
       protocol: TCP
 ---
-# doom-dashboard: accept traffic from ingress-nginx.
+# doom-dashboard: accept traffic from nginx-gateway.
 # Egress: reach doom (game backend) and Prometheus in monitoring namespace.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -88,7 +88,7 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
-          kubernetes.io/metadata.name: ingress-nginx
+          kubernetes.io/metadata.name: nginx-gateway
     ports:
     - port: 8080
       protocol: TCP
@@ -139,7 +139,7 @@ spec:
     - port: 3306
       protocol: TCP
 ---
-# uptimekuma: accept traffic from ingress-nginx and doom-dashboard (metrics query).
+# uptimekuma: accept traffic from nginx-gateway and doom-dashboard (metrics query).
 # Egress is fully open — uptime-kuma pings arbitrary external endpoints.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -157,7 +157,7 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
-          kubernetes.io/metadata.name: ingress-nginx
+          kubernetes.io/metadata.name: nginx-gateway
     - podSelector:
         matchLabels:
           app: doom-dashboard

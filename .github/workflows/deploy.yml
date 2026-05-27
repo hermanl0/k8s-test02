@@ -264,6 +264,7 @@ jobs:
       - name: Apply Gateway API resources
         run: |
           kubectl apply -f k8s/certificates.yaml
+          kubectl apply -f k8s/nginx-proxy.yaml
           kubectl apply -f k8s/gateway.yaml
 
       - name: Show cluster state

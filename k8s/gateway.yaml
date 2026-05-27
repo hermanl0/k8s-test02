@@ -101,7 +101,24 @@ spec:
   hostnames:
   - test02.hl0.dev
   rules:
-  - backendRefs:
+  - filters:
+    - type: ResponseHeaderModifier
+      responseHeaderModifier:
+        set:
+        - name: Strict-Transport-Security
+          value: "max-age=31536000; includeSubDomains; preload"
+        - name: X-Content-Type-Options
+          value: nosniff
+        - name: X-Frame-Options
+          value: DENY
+        - name: Referrer-Policy
+          value: strict-origin-when-cross-origin
+    - type: ExtensionRef
+      extensionRef:
+        group: gateway.nginx.org
+        kind: SnippetsFilter
+        name: rate-limit
+    backendRefs:
     - name: nginx
       port: 80
 ---
@@ -117,7 +134,22 @@ spec:
   hostnames:
   - doom.hl0.dev
   rules:
-  - backendRefs:
+  - filters:
+    - type: ResponseHeaderModifier
+      responseHeaderModifier:
+        set:
+        - name: Strict-Transport-Security
+          value: "max-age=31536000; includeSubDomains; preload"
+        - name: X-Content-Type-Options
+          value: nosniff
+        - name: Referrer-Policy
+          value: strict-origin-when-cross-origin
+    - type: ExtensionRef
+      extensionRef:
+        group: gateway.nginx.org
+        kind: SnippetsFilter
+        name: rate-limit
+    backendRefs:
     - name: doom-dashboard
       port: 80
 ---
@@ -133,7 +165,24 @@ spec:
   hostnames:
   - status.hl0.dev
   rules:
-  - backendRefs:
+  - filters:
+    - type: ResponseHeaderModifier
+      responseHeaderModifier:
+        set:
+        - name: Strict-Transport-Security
+          value: "max-age=31536000; includeSubDomains; preload"
+        - name: X-Content-Type-Options
+          value: nosniff
+        - name: X-Frame-Options
+          value: SAMEORIGIN
+        - name: Referrer-Policy
+          value: strict-origin-when-cross-origin
+    - type: ExtensionRef
+      extensionRef:
+        group: gateway.nginx.org
+        kind: SnippetsFilter
+        name: rate-limit
+    backendRefs:
     - name: uptimekuma
       port: 3001
 ---
@@ -152,6 +201,21 @@ spec:
   hostnames:
   - grafana.hl0.dev
   rules:
-  - backendRefs:
+  - filters:
+    - type: ResponseHeaderModifier
+      responseHeaderModifier:
+        set:
+        - name: Strict-Transport-Security
+          value: "max-age=31536000; includeSubDomains; preload"
+        - name: X-Content-Type-Options
+          value: nosniff
+        - name: Referrer-Policy
+          value: strict-origin-when-cross-origin
+    - type: ExtensionRef
+      extensionRef:
+        group: gateway.nginx.org
+        kind: SnippetsFilter
+        name: rate-limit
+    backendRefs:
     - name: kube-prometheus-stack-grafana
       port: 80

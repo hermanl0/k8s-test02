@@ -1,0 +1,30 @@
+# Rate limit: 20 req/s per source IP, burst 60, return 429 when exceeded.
+# Applied to all lab HTTPRoutes via extensionRef.
+apiVersion: gateway.nginx.org/v1alpha1
+kind: SnippetsFilter
+metadata:
+  name: rate-limit
+  namespace: lab
+spec:
+  snippets:
+  - context: http
+    value: "limit_req_zone $binary_remote_addr zone=per_ip:10m rate=20r/s;"
+  - context: http.server.location
+    value: |
+      limit_req zone=per_ip burst=60 nodelay;
+      limit_req_status 429;
+---
+# Separate filter for the grafana HTTPRoute which lives in the monitoring namespace.
+apiVersion: gateway.nginx.org/v1alpha1
+kind: SnippetsFilter
+metadata:
+  name: rate-limit
+  namespace: monitoring
+spec:
+  snippets:
+  - context: http
+    value: "limit_req_zone $binary_remote_addr zone=per_ip_monitoring:10m rate=10r/s;"
+  - context: http.server.location
+    value: |
+      limit_req zone=per_ip_monitoring burst=30 nodelay;
+      limit_req_status 429;
