@@ -30,6 +30,12 @@ data:
             proxy_set_header Connection "upgrade";
             proxy_hide_header X-Frame-Options;
             proxy_read_timeout 60s;
+            # Override server-level headers for the game proxy.
+            # Any add_header in a location block replaces ALL server-level
+            # add_header directives for that location, so we re-declare what
+            # we need and use a permissive CSP that allows WebAssembly.
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header Content-Security-Policy "default-src 'self' blob: data:; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; img-src 'self' blob: data:; connect-src 'self';" always;
         }
 
         location /metrics-data {
