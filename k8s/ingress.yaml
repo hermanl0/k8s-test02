@@ -5,6 +5,8 @@ metadata:
   namespace: lab
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"
 spec:
   ingressClassName: nginx
   tls:
@@ -30,6 +32,8 @@ metadata:
   namespace: lab
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/limit-rps: "30"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
 spec:
   ingressClassName: nginx
   tls:
@@ -55,6 +59,8 @@ metadata:
   namespace: lab
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"
 spec:
   ingressClassName: nginx
   tls:
@@ -80,6 +86,8 @@ metadata:
   namespace: monitoring
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"
 spec:
   ingressClassName: nginx
   tls:

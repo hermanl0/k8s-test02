@@ -5,6 +5,20 @@ controller:
     hsts-max-age: "31536000"
     hsts-include-subdomains: "true"
     hsts-preload: "true"
+    # Force HTTPS redirect for all HTTP requests
+    ssl-redirect: "true"
+    force-ssl-redirect: "true"
+    # Hide server version from error pages and headers
+    server-tokens: "false"
+    # Rate limiting — drop to 429 when a single IP exceeds 20 req/s
+    limit-rps: "20"
+    limit-connections: "20"
+    # Block common vulnerability scanner user agents
+    block-user-agents: "masscan,nikto,sqlmap,nmap,zgrab,nuclei,dirsearch,gobuster,wfuzz,hydra,curl/7,python-requests,python-urllib,Go-http-client/1.1,scanbot,Expanse,censys,shodan"
+    # Use real client IP from X-Forwarded-For when behind Azure LB
+    use-forwarded-headers: "true"
+    compute-full-forwarded-for: "true"
+    forwarded-for-header: "X-Forwarded-For"
   service:
     externalTrafficPolicy: Local
     annotations:
