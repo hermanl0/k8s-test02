@@ -60,6 +60,15 @@ jobs:
             --name lab-aks \
             --overwrite-existing
 
+      - name: Create ServiceNow secret
+        run: |
+          kubectl create secret generic servicenow-creds \
+            --from-literal=SNOW_URL=https://dev365501.service-now.com \
+            --from-literal=SNOW_USER=admin \
+            --from-literal=SNOW_PASS="${{ secrets.SNOW_PASS }}" \
+            --namespace lab \
+            --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Apply manifests
         run: |
           kubectl apply -f k8s/namespace.yaml

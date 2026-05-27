@@ -107,6 +107,9 @@ spec:
     ports:
     - port: 9090
       protocol: TCP
+  - ports:
+    - port: 443
+      protocol: TCP
 ---
 # mariadb: accept connections from any pod in the lab namespace.
 apiVersion: networking.k8s.io/v1

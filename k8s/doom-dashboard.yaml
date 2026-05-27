@@ -52,10 +52,13 @@ metadata:
 data:
   metrics_server.py: |
     #!/usr/bin/env python3
-    import json, time, threading, urllib.request, urllib.parse
+    import json, time, threading, urllib.request, urllib.parse, os, base64
     from http.server import BaseHTTPRequestHandler, HTTPServer
 
-    PROM = "http://kube-prometheus-stack-prometheus.monitoring:9090/api/v1/query"
+    PROM      = "http://kube-prometheus-stack-prometheus.monitoring:9090/api/v1/query"
+    SNOW_URL  = os.environ.get('SNOW_URL', '').rstrip('/')
+    SNOW_USER = os.environ.get('SNOW_USER', '')
+    SNOW_PASS = os.environ.get('SNOW_PASS', '')
 
     SCALARS = {
         "cpu":    '100 - avg(rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100',
@@ -109,10 +112,53 @@ data:
             out["pod_list"] = []
         return out
 
+    def _fetch_snow():
+        if not (SNOW_URL and SNOW_USER and SNOW_PASS):
+            return None
+        creds = base64.b64encode(f"{SNOW_USER}:{SNOW_PASS}".encode()).decode()
+        hdrs  = {"Authorization": f"Basic {creds}", "Accept": "application/json"}
+        stats_url = (SNOW_URL + "/api/now/stats/incident"
+                     "?sysparm_query=active%3Dtrue"
+                     "&sysparm_group_by=priority&sysparm_count=true")
+        req = urllib.request.Request(stats_url, headers=hdrs)
+        with urllib.request.urlopen(req, timeout=8) as r:
+            stats = json.load(r)
+        counts = {}
+        for item in stats.get('result', []):
+            p = item['groupby_fields'][0]['value']
+            counts[f"p{p}"] = int(item['stats']['count'])
+        inc_url = (SNOW_URL + "/api/now/table/incident"
+                   "?sysparm_limit=4"
+                   "&sysparm_fields=number,short_description,priority"
+                   "&sysparm_query=active%3Dtrue%5Epriority%3C%3D2%5EORDERBYpriority")
+        req = urllib.request.Request(inc_url, headers=hdrs)
+        with urllib.request.urlopen(req, timeout=8) as r:
+            incs = json.load(r)
+        recent = [
+            {"num": i['number'], "desc": i['short_description'][:48], "prio": i['priority']}
+            for i in incs.get('result', [])
+        ]
+        return {"priority_counts": counts, "recent": recent}
+
+    _snow_tick  = 0
+    _snow_cache = {}
+
     def _loop():
+        global _snow_tick, _snow_cache
         while True:
             try:
                 data = _fetch()
+                if _snow_tick % 12 == 0:
+                    try:
+                        s = _fetch_snow()
+                        if s is not None:
+                            _snow_cache.clear()
+                            _snow_cache.update(s)
+                    except Exception as e:
+                        print(f"[metrics] snow error: {e}", flush=True)
+                _snow_tick += 1
+                if _snow_cache:
+                    data['snow'] = dict(_snow_cache)
                 with _lock:
                     _cache.clear()
                     _cache.update(data)
@@ -231,6 +277,19 @@ data:
         .pdot.fail{background:var(--rhi);box-shadow:0 0 4px var(--rhi)}
         .pname{font-size:13px;color:var(--tx);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 
+        /* servicenow */
+        .snow-p{display:flex;justify-content:space-around;padding:4px 0 8px}
+        .snow-pb{text-align:center}
+        .snow-pv{font-size:36px;line-height:1;font-variant-numeric:tabular-nums}
+        .snow-pl{font-size:10px;color:var(--dim);letter-spacing:2px;margin-top:3px}
+        .snow-p1{color:var(--rhi);text-shadow:0 0 8px rgba(255,34,0,.35)}
+        .snow-p2{color:var(--amb);text-shadow:0 0 8px rgba(208,128,0,.3)}
+        .snow-p3{color:#b0b000}
+        .snow-p4{color:var(--dim)}
+        .inc-row{display:flex;align-items:baseline;gap:6px;margin-bottom:4px}
+        .inc-num{font-size:11px;color:var(--dim);flex-shrink:0}
+        .inc-desc{font-size:12px;color:var(--tx);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+
         /* ingress */
         .irow{display:flex;justify-content:space-between;margin-bottom:6px;font-size:14px}
         .iname{color:var(--dim);flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
@@ -287,6 +346,17 @@ data:
             <div class="nb"><div class="nv" id="n-n">&mdash;</div><div class="nl">NODES</div></div>
             <div class="nb"><div class="nv" id="n-s">&mdash;</div><div class="nl">NS</div></div>
           </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-hd">&#9889; servicenow</div>
+          <div class="snow-p">
+            <div class="snow-pb"><div class="snow-pv snow-p1" id="sn-p1">&mdash;</div><div class="snow-pl">P1</div></div>
+            <div class="snow-pb"><div class="snow-pv snow-p2" id="sn-p2">&mdash;</div><div class="snow-pl">P2</div></div>
+            <div class="snow-pb"><div class="snow-pv snow-p3" id="sn-p3">&mdash;</div><div class="snow-pl">P3</div></div>
+            <div class="snow-pb"><div class="snow-pv snow-p4" id="sn-p4">&mdash;</div><div class="snow-pl">P4</div></div>
+          </div>
+          <div id="sn-inc"><div class="inc-row"><span class="inc-desc" style="color:#333">loading&hellip;</span></div></div>
         </div>
 
         <div id="pod-sec">
@@ -378,6 +448,19 @@ data:
           if(d.nodes!=null) document.getElementById('n-n').textContent=Math.round(d.nodes);
           if(d.ns!=null)   document.getElementById('n-s').textContent=Math.round(d.ns);
           renderPods(d.pod_list);
+          if(d.snow){
+            var pc=d.snow.priority_counts||{};
+            ['1','2','3','4'].forEach(function(p){
+              var el=document.getElementById('sn-p'+p);
+              if(el) el.textContent=(pc['p'+p]!=null?pc['p'+p]:'0');
+            });
+            var incs=d.snow.recent||[];
+            document.getElementById('sn-inc').innerHTML=incs.length
+              ?incs.map(function(r){
+                  return '<div class="inc-row"><span class="inc-num">'+r.num+'</span><span class="inc-desc">'+r.desc+'</span></div>';
+                }).join('')
+              :'<div class="inc-row"><span class="inc-desc" style="color:#555">no active P1/P2</span></div>';
+          }
           var ings=d.ingress||[];
           document.getElementById('ing').innerHTML=ings.length
             ?ings.map(function(r){
@@ -455,6 +538,21 @@ spec:
           value: "1"
         - name: PYTHONUNBUFFERED
           value: "1"
+        - name: SNOW_URL
+          valueFrom:
+            secretKeyRef:
+              name: servicenow-creds
+              key: SNOW_URL
+        - name: SNOW_USER
+          valueFrom:
+            secretKeyRef:
+              name: servicenow-creds
+              key: SNOW_USER
+        - name: SNOW_PASS
+          valueFrom:
+            secretKeyRef:
+              name: servicenow-creds
+              key: SNOW_PASS
         securityContext:
           runAsNonRoot: true
           runAsUser: 65534
