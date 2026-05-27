@@ -70,6 +70,7 @@ jobs:
           kubectl apply -f k8s/doom.yaml
           kubectl apply -f k8s/doom-dashboard.yaml
           kubectl rollout restart deployment/doom-dashboard -n lab
+          kubectl apply -f k8s/grafana-lab-dashboard.yaml
 
       - name: Verify rollout
         run: |
