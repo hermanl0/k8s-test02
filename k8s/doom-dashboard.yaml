@@ -76,9 +76,11 @@ data:
     PODS_Q    = 'kube_pod_status_phase == 1'
     LOKI      = "http://loki-stack.monitoring:3100"
 
-    IP_RE    = re.compile(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b')
+    # Match only the leading $remote_addr in nginx access log lines.
+    # Scanning the full line picks up IPs in User-Agent strings (e.g. Chrome/148.0.0.0).
+    IP_RE    = re.compile(r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b', re.MULTILINE)
     SKIP_IPS = {'168.63.129.16'}  # Azure LB health probe
-    GEO_CACHE = {}  # ip -> {city, country, country_code}
+    GEO_CACHE = {}  # ip -> {country, country_code}
 
     def _is_public(ip):
         if ip in SKIP_IPS:
@@ -90,25 +92,25 @@ data:
             return GEO_CACHE[ip]
         try:
             req = urllib.request.Request(
-                f"https://ipapi.co/{ip}/json/",
+                f"https://ipwho.is/{ip}",
                 headers={"User-Agent": "doom-dashboard/1.0"})
             with urllib.request.urlopen(req, timeout=5) as r:
                 d = json.load(r)
-            if d.get("error"):
-                return {"city": "", "country": "", "country_code": ""}
-            info = {"city": d.get("city", ""), "country": d.get("country_name", ""),
+            if not d.get("success"):
+                return {"country": "", "country_code": ""}
+            info = {"country": d.get("country", ""),
                     "country_code": (d.get("country_code") or "").lower()}
             GEO_CACHE[ip] = info
             return info
         except Exception:
-            return {"city": "", "country": "", "country_code": ""}
+            return {"country": "", "country_code": ""}
 
     def _fetch_geo():
         now_ns   = int(time.time() * 1_000_000_000)
-        start_ns = now_ns - 10 * 60 * 1_000_000_000  # last 10 min
+        start_ns = now_ns - 30 * 60 * 1_000_000_000  # last 30 min
         params   = urllib.parse.urlencode({
             "query":     '{namespace="ingress-nginx"}',
-            "limit":     "200",
+            "limit":     "500",
             "start":     str(start_ns),
             "end":       str(now_ns),
             "direction": "backward",
@@ -116,17 +118,22 @@ data:
         url = LOKI + "/loki/api/v1/query_range?" + params
         with urllib.request.urlopen(url, timeout=8) as r:
             data = json.load(r)
-        seen, seen_set = [], set()
+        ip_set = set()
         for stream in data.get("data", {}).get("result", []):
             for ts_ns, line in stream.get("values", []):
-                for ip in IP_RE.findall(line):
-                    if ip not in seen_set and _is_public(ip):
-                        seen_set.add(ip)
-                        geo = _geolocate(ip)
-                        seen.append({"ip": ip, "ts": int(ts_ns) // 1_000_000_000, **geo})
-                        if len(seen) >= 5:
-                            return seen
-        return seen
+                m = IP_RE.match(line)
+                if m and _is_public(m.group(1)):
+                    ip_set.add(m.group(1))
+        country_counts = {}
+        for ip in ip_set:
+            geo = _geolocate(ip)
+            cc = geo.get("country_code", "")
+            if not cc:
+                continue
+            if cc not in country_counts:
+                country_counts[cc] = {"country": geo["country"], "country_code": cc, "count": 0}
+            country_counts[cc]["count"] += 1
+        return sorted(country_counts.values(), key=lambda x: -x["count"])[:6]
 
     # Alert rules evaluated every 60s. Scalar rules fire when the single
     # returned value exceeds threshold. Vector rules fire once per result row.
@@ -498,10 +505,10 @@ data:
         .uk-name{flex:1;font-size:13px;color:var(--tx);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
         .uk-ping{font-size:12px;color:var(--amb);flex-shrink:0;font-variant-numeric:tabular-nums;width:46px;text-align:right}
         .uk-up{font-size:10px;color:var(--dim);flex-shrink:0;width:40px;text-align:right}
-        .geo-row{display:flex;align-items:center;gap:6px;margin-bottom:5px}
-        .geo-flag{font-size:14px;flex-shrink:0;width:20px;text-align:center}
-        .geo-ip{font-size:11px;color:var(--dim);flex-shrink:0;width:108px;font-variant-numeric:tabular-nums}
-        .geo-loc{font-size:12px;color:var(--tx);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+        .geo-row{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+        .geo-flag{font-size:15px;flex-shrink:0;width:22px;text-align:center}
+        .geo-loc{font-size:13px;color:var(--tx);flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+        .geo-ct{font-size:12px;color:var(--amb);flex-shrink:0;font-variant-numeric:tabular-nums;min-width:24px;text-align:right}
         #pod-sec{padding:12px 14px;flex:1;overflow-y:auto;min-height:0;border-bottom:1px solid var(--bdr)}
         .pgrp{margin-bottom:10px}
         .pgrp-hd{
@@ -555,7 +562,7 @@ data:
           </div>
         </div>
         <div class="sec">
-          <div class="sec-hd">&#128994; endpoint health</div>
+          <div class="sec-hd">&#128994; uptime kuma</div>
           <div id="uk-list"><div class="uk-row"><span class="uk-name" style="color:#333">loading&hellip;</span></div></div>
         </div>
         <div class="sec">
@@ -585,7 +592,7 @@ data:
           <div id="sn-inc"><div class="inc-row"><span class="inc-desc" style="color:#333">loading&hellip;</span></div></div>
         </div>
         <div class="sec">
-          <div class="sec-hd">&#127757; recent visitors</div>
+          <div class="sec-hd">&#127757; visitor countries</div>
           <div id="geo-list"><div class="geo-row"><span class="geo-loc" style="color:#333">loading&hellip;</span></div></div>
         </div>
         <div id="pod-sec">
@@ -709,15 +716,14 @@ data:
           }
           if(d.geo&&d.geo.length){
             document.getElementById('geo-list').innerHTML=d.geo.map(function(g){
-              var loc=[g.city,g.country].filter(Boolean).join(', ')||'—';
               return '<div class="geo-row">'+
                 '<span class="geo-flag">'+flagEmoji(g.country_code)+'</span>'+
-                '<span class="geo-ip">'+g.ip+'</span>'+
-                '<span class="geo-loc">'+loc+'</span></div>';
+                '<span class="geo-loc">'+(g.country||'Unknown')+'</span>'+
+                '<span class="geo-ct">'+g.count+'</span></div>';
             }).join('');
           } else if(d.geo){
             document.getElementById('geo-list').innerHTML=
-              '<div class="geo-row"><span class="geo-loc" style="color:#555">no visitors yet</span></div>';
+              '<div class="geo-row"><span class="geo-loc" style="color:#555">no data yet</span></div>';
           }
           if(d.snow){
             var pc=d.snow.priority_counts||{};

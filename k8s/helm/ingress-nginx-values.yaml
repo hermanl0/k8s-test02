@@ -6,6 +6,7 @@ controller:
     hsts-include-subdomains: "true"
     hsts-preload: "true"
   service:
+    externalTrafficPolicy: Local
     annotations:
       service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: /healthz
   resources:
