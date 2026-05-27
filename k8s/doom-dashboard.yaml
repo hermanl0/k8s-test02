@@ -94,6 +94,8 @@ data:
                 headers={"User-Agent": "doom-dashboard/1.0"})
             with urllib.request.urlopen(req, timeout=5) as r:
                 d = json.load(r)
+            if d.get("error"):
+                return {"city": "", "country": "", "country_code": ""}
             info = {"city": d.get("city", ""), "country": d.get("country_name", ""),
                     "country_code": (d.get("country_code") or "").lower()}
             GEO_CACHE[ip] = info
@@ -145,14 +147,14 @@ data:
         },
         {
             "key": "pod-restart", "scalar": False, "priority": "2",
-            "query":     'sort_desc(increase(kube_pod_container_status_restarts_total{container!=""}[1h])) > 2',
+            "query":     'sort_desc(increase(kube_pod_container_status_restarts_total{container!="",namespace=~"lab|monitoring|ingress-nginx|cert-manager"}[1h])) > 2',
             "key_sfx":   "{ns}-{pod}",
             "title_tpl": "Pod restart loop detected: {ns}/{pod}",
             "desc_tpl":  "Pod {pod} in namespace {ns} has restarted {val:.0f} times in the past hour. Possible CrashLoopBackOff or OOMKill. Immediate investigation recommended.",
         },
         {
             "key": "pod-not-running", "scalar": False, "priority": "2",
-            "query":     'kube_pod_status_phase{phase=~"Pending|Failed"} == 1',
+            "query":     'kube_pod_status_phase{phase=~"Pending|Failed",namespace=~"lab|monitoring|ingress-nginx|cert-manager"} == 1',
             "key_sfx":   "{ns}-{pod}-{phase}",
             "title_tpl": "Pod stuck in {phase}: {ns}/{pod}",
             "desc_tpl":  "Pod {pod} in namespace {ns} has been in {phase} state and is not recovering. Manual investigation may be required.",
@@ -268,24 +270,24 @@ data:
                 print(f"[snow] alert eval ({rule['key']}): {e}", flush=True)
         return firing
 
+    _ST_RE   = re.compile(r'^monitor_status\{[^}]*monitor_name="([^"]+)"[^}]*\}\s+([\d.]+)', re.M)
+    _PING_RE = re.compile(r'^monitor_response_time\{[^}]*monitor_name="([^"]+)"[^}]*\}\s+([\d.]+)', re.M)
+
     def _fetch_uptime():
         if not UK_KEY:
             return []
+        creds = base64.b64encode(f"api:{UK_KEY}".encode()).decode()
         req = urllib.request.Request(
-            UK_URL + "/api/v1/monitors",
-            headers={"Authorization": f"Bearer {UK_KEY}", "Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=5) as r:
-            data = json.load(r)
-        out = []
-        for m in data.get("monitors", []):
-            hb = (m.get("heartBeatList") or [{}])[-1]
-            out.append({
-                "name":   m.get("name", ""),
-                "status": hb.get("status", 0),
-                "ping":   hb.get("ping"),
-                "up24":   (m.get("uptime") or {}).get("24"),
-            })
-        return out
+            UK_URL + "/metrics",
+            headers={"Authorization": f"Basic {creds}", "Accept": "text/plain"})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            raw = r.read().decode()
+        status_map = {m.group(1): int(float(m.group(2))) for m in _ST_RE.finditer(raw)}
+        ping_map   = {m.group(1): float(m.group(2)) for m in _PING_RE.finditer(raw)}
+        return [
+            {"name": name, "status": status, "ping": ping_map.get(name), "up24": None}
+            for name, status in status_map.items()
+        ]
 
     def _sync_snow():
         if not (SNOW_URL and SNOW_USER and SNOW_PASS):
@@ -325,9 +327,11 @@ data:
                 continue
             try:
                 _snow_req("PATCH", f"/api/now/table/incident/{sys_id}", {
-                    "state":       "6",
-                    "close_code":  "Solved (Permanently)",
-                    "close_notes": "Condition cleared automatically by cluster monitoring.",
+                    "state":            "4",
+                    "active":           "false",
+                    "close_code":       "Solved (Permanently)",
+                    "close_notes":      "Condition cleared automatically by cluster monitoring.",
+                    "work_notes":       "Alert condition resolved; no further action required.",
                 })
                 print(f"[snow] resolved {sys_id} ({key})", flush=True)
             except Exception as e:
