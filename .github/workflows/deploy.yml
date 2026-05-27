@@ -206,9 +206,8 @@ jobs:
       - name: Deploy NGINX Gateway Fabric
         run: |
           kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml
-          helm repo add nginx-stable https://helm.nginx.com/stable
-          helm repo update
-          helm upgrade --install nginx-gateway-fabric nginx-stable/nginx-gateway-fabric \
+          helm upgrade --install nginx-gateway-fabric \
+            oci://ghcr.io/nginxinc/charts/nginx-gateway-fabric \
             --namespace nginx-gateway \
             --create-namespace \
             --values k8s/helm/nginx-gateway-fabric-values.yaml \
