@@ -41,7 +41,7 @@ grafana:
     default:
       ingress-nginx:
         gnetId: 9614
-        revision: 1
+        revision: 9
         datasource: Prometheus
       node-exporter-full:
         gnetId: 1860

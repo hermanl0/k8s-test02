@@ -1,64 +1,57 @@
 ---
 layout: default
-title: AKS Lab — Platform Dashboard
+title: AKS Lab — hl0.dev
 ---
 
-## Cluster Status
+## Cluster
 
 | | |
 |---|---|
-| **Platform** | Azure Kubernetes Service (AKS) |
+| **Platform** | Azure Kubernetes Service (AKS), Free SKU tier |
 | **Region** | West Europe (Amsterdam) |
-| **Kubernetes** | v1.34.7 |
-| **Nodes** | 2 × Standard_D2s_v6 (2 vCPU / 8 GB) |
+| **Node pool** | 2 × Standard_D2s_v6 — 2 vCPU / 8 GB each |
 | **OS** | Ubuntu 22.04 LTS |
-| **Status** | ✅ Running |
+
+**Live endpoints**
+
+| URL | Service |
+|-----|---------|
+| [doom.hl0.dev](https://doom.hl0.dev) | DOOM ops dashboard (game + live cluster metrics + ServiceNow) |
+| [grafana.hl0.dev](https://grafana.hl0.dev) | Grafana — Prometheus + Loki datasources |
+| [test02.hl0.dev](https://test02.hl0.dev) | nginx |
+| [status.hl0.dev](https://status.hl0.dev) | Uptime Kuma |
 
 ---
 
-## Nodes
+## Workloads
 
-| Name | Status | Version | OS |
-|------|--------|---------|-----|
-| aks-nodepool1-…-000000 | ✅ Ready | v1.34.7 | Ubuntu 22.04 |
-| aks-nodepool1-…-000001 | ✅ Ready | v1.34.7 | Ubuntu 22.04 |
+### Namespace: `lab`
 
----
+| Deployment | Image | Replicas | Exposed at |
+|---|---|---|---|
+| nginx | nginx:1.27-alpine | 2 | test02.hl0.dev |
+| mariadb | mariadb:10.11 | 1 | ClusterIP only |
+| doom | scottlawsonbc/doom-wasm | 1 | via doom-dashboard proxy |
+| doom-dashboard | nginxinc/nginx-unprivileged:1.27-alpine + python:3.12-alpine | 1 | doom.hl0.dev |
+| uptimekuma | louislam/uptime-kuma:1 | 1 | status.hl0.dev |
 
-## Workloads — namespace: `lab`
+### Namespace: `monitoring`
 
-| Pod | Image | Replicas | Status |
-|-----|-------|----------|--------|
-| nginx | nginx:1.27-alpine | 2 | ✅ Running |
-| mariadb | mariadb:10.11 | 1 | ✅ Running |
+| Component | Source | Role |
+|---|---|---|
+| Prometheus | kube-prometheus-stack | Metrics — 7-day retention, 5 Gi PVC |
+| Grafana | kube-prometheus-stack | Dashboards — Prometheus + Loki datasources |
+| node-exporter | kube-prometheus-stack | Host-level CPU / memory / disk metrics |
+| kube-state-metrics | kube-prometheus-stack | Kubernetes object state metrics |
+| Loki | loki-stack | Log aggregation |
+| Promtail | loki-stack | Log shipping (DaemonSet on every node) |
 
-### Resource allocations
+### Supporting namespaces
 
-| Container | CPU request | CPU limit | Memory request | Memory limit |
-|-----------|-------------|-----------|----------------|--------------|
-| nginx | 100m | 200m | 64Mi | 128Mi |
-| mariadb | 250m | 500m | 256Mi | 512Mi |
-
----
-
-## Services
-
-| Name | Type | Port | Exposure |
-|------|------|------|----------|
-| nginx | ClusterIP | 80 | Internal only |
-| mariadb | ClusterIP | 3306 | Internal only |
-
-No LoadBalancer services — zero public endpoints. Access via `kubectl port-forward`.
-
----
-
-## Persistent Storage
-
-| Name | StorageClass | Capacity | Mode | Status |
-|------|-------------|----------|------|--------|
-| mariadb-data | managed-csi | 5 Gi | ReadWriteOnce | ✅ Bound |
-
-Azure Disk CSI driver provisions the volume automatically and supports snapshots for backup and DR.
+| Namespace | Component | Role |
+|---|---|---|
+| ingress-nginx | ingress-nginx controller | Azure LoadBalancer → TLS termination → pod routing |
+| cert-manager | cert-manager | Automated Let's Encrypt TLS via Cloudflare DNS-01 |
 
 ---
 
@@ -66,96 +59,78 @@ Azure Disk CSI driver provisions the volume automatically and supports snapshots
 
 ```mermaid
 graph LR
-    subgraph Internet
-        YOU(["Operator\n(kubectl)"])
-    end
+    Browser(["Browser"]) --> CF["Cloudflare\nDNS"]
+    CF --> LB["Azure LoadBalancer\n(ingress-nginx)"]
 
-    subgraph Azure["Azure — West Europe"]
-        API["AKS Control Plane\n(managed by Azure)"]
+    subgraph AKS["AKS — West Europe"]
+        LB --> ING["ingress-nginx\nTLS termination"]
 
-        subgraph Nodes["Node Pool x2  Standard_D2s_v6"]
-            subgraph NS["Namespace: lab"]
-                N1["nginx pod"]
-                N2["nginx pod"]
-                M["mariadb pod"]
-                PVC[("PVC 5Gi\nmanaged-csi")]
-            end
+        subgraph lab["Namespace: lab"]
+            ING -->|doom.hl0.dev| DD["doom-dashboard\nnginx + python sidecar"]
+            ING -->|test02.hl0.dev| NX["nginx ×2"]
+            ING -->|status.hl0.dev| UK["uptimekuma"]
+            DD -->|proxy /doom/| DOOM["doom WASM"]
+            NX --> MDB[("mariadb\n5 Gi")]
         end
 
-        SVC_N["svc/nginx\nClusterIP :80"]
-        SVC_M["svc/mariadb\nClusterIP :3306"]
-    end
+        subgraph monitoring["Namespace: monitoring"]
+            ING -->|grafana.hl0.dev| GF["Grafana"]
+            PROM["Prometheus\n5 Gi"] --> GF
+            LOKI["Loki"] --> GF
+            PT["Promtail\nDaemonSet"] --> LOKI
+        end
 
-    YOU -->|"kubectl TLS"| API
-    API --> Nodes
-    N1 & N2 --> SVC_M --> M --> PVC
-    YOU -->|"port-forward"| SVC_N --> N1 & N2
+        DD -->|PromQL| PROM
+        DD -->|LogQL| LOKI
+        DD -->|REST API| SNOW["ServiceNow\nexternal"]
+        DD -->|geo lookup| IPAPI["ipapi.co\nexternal"]
+    end
 ```
 
 ---
 
-## Security Design
+## Security
 
-| Principle | Implementation |
-|-----------|----------------|
-| No public endpoints | All services are ClusterIP — no LoadBalancer or NodePort |
-| Secrets management | Database credentials stored as Kubernetes Secrets, not in manifests |
-| Least privilege | `appuser` has DML on `appdb` only; `monitor` user is read-only |
-| Resource limits | CPU and memory limits on all containers — prevents OOMKill cascades |
-| Health probes | Liveness + readiness probes on nginx and MariaDB |
-| RBAC | Enabled cluster-wide with managed identity |
-
----
-
-## Tech Stack
-
-| Component | Version | Role |
-|-----------|---------|------|
-| Azure Kubernetes Service | 1.34.7 | Managed Kubernetes control plane |
-| Nginx | 1.27-alpine | Web / reverse proxy (2 replicas) |
-| MariaDB | 10.11 | Relational database |
-| Azure Disk CSI | built-in | Persistent storage driver |
-| Azure CLI | 2.x | Infrastructure provisioning |
-| kubectl | 1.34.7 | Cluster management |
+| Layer | Implementation |
+|-------|----------------|
+| TLS | cert-manager + Let's Encrypt DNS-01 (Cloudflare), HSTS on all endpoints |
+| Network | Default-deny `NetworkPolicy` in `lab`; per-workload ingress/egress allow rules |
+| Containers | `runAsNonRoot`, `readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`, `seccompProfile: RuntimeDefault` |
+| Secrets | Kubernetes Secrets for all credentials; GitHub Actions secrets for CI — nothing hardcoded in manifests |
+| Ingress | `allowSnippetAnnotations: false` (ingress-nginx safe default) |
 
 ---
 
-## Design Decisions
+## Storage
 
-**Why ClusterIP only?**
-Exposing services via LoadBalancer creates a public attack surface. All access goes through `kubectl port-forward`, which authenticates through the AKS API server and logs every session.
-
-**Why 2 Nginx replicas?**
-Demonstrates pod scheduling across nodes, rolling updates, and how Kubernetes routes traffic via kube-proxy. In production a HorizontalPodAutoscaler would manage replica count based on load.
-
-**Why managed-csi for storage?**
-Azure Disk CSI is the default StorageClass in AKS. It provisions Azure Managed Disks automatically and supports volume snapshots — directly relevant to backup and DR workflows.
+| PVC | Namespace | Size | Consumer |
+|-----|-----------|------|----------|
+| mariadb-data | lab | 5 Gi | MariaDB |
+| uptimekuma-data | lab | 1 Gi | Uptime Kuma |
+| grafana | monitoring | 2 Gi | Grafana |
+| prometheus-db | monitoring | 5 Gi | Prometheus |
 
 ---
 
-## Key Commands
+## Key commands
 
 ```bash
 # Get cluster credentials
 az aks get-credentials --resource-group lab-rg --name lab-aks
 
-# Check node and pod status
-kubectl get nodes
-kubectl get pods -n lab -o wide
+# Check everything
+kubectl get pods,svc,pvc,ingress -n lab
+kubectl get pods -n monitoring
 
-# Access nginx locally
-kubectl port-forward svc/nginx -n lab 8080:80
+# Certificate status
+kubectl get certificate -A
 
-# Check MariaDB connectivity
-kubectl exec -n lab deployment/nginx -- \
-  mariadb -h mariadb -u appuser -p --skip-ssl appdb -e "SELECT NOW();"
+# Tail doom-dashboard metrics sidecar logs (Prometheus + SNOW + geo)
+kubectl logs -n lab deployment/doom-dashboard -c metrics -f
+
+# Force-reload ConfigMap changes in doom-dashboard
+kubectl rollout restart deployment/doom-dashboard -n lab
 
 # Scale nginx
 kubectl scale deployment nginx -n lab --replicas=3
-
-# Roll back a deployment
-kubectl rollout undo deployment/nginx -n lab
-
-# View events (useful for debugging)
-kubectl get events -n lab --sort-by='.lastTimestamp'
 ```
