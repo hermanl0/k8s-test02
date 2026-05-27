@@ -69,6 +69,13 @@ jobs:
             --namespace lab \
             --dry-run=client -o yaml | kubectl apply -f -
 
+      - name: Create Uptime Kuma secret
+        run: |
+          kubectl create secret generic uptimekuma-creds \
+            --from-literal=UPTIME_KUMA_API_KEY="${{ secrets.UPTIME_KUMA_API_KEY }}" \
+            --namespace lab \
+            --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Apply manifests
         run: |
           kubectl apply -f k8s/namespace.yaml

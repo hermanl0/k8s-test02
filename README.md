@@ -74,6 +74,7 @@ Every push to `main` that touches `k8s/**` or `.github/workflows/deploy.yml` tri
 | `CLOUDFLARE_API_TOKEN` | DNS record upsert |
 | `GRAFANA_ADMIN_PASSWORD` | Grafana admin Kubernetes Secret |
 | `SNOW_PASS` | ServiceNow credentials Kubernetes Secret |
+| `UPTIME_KUMA_API_KEY` | Uptime Kuma API key Kubernetes Secret |
 
 Typical deploy time: **3–4 minutes** from push to running pods.
 
