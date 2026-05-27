@@ -112,6 +112,33 @@ graph LR
 
 ---
 
+## CI/CD
+
+Every push to `main` that touches `k8s/**` or `.github/workflows/deploy.yml` triggers the **Deploy to AKS** workflow automatically. A manual run can be started from the Actions tab at any time (`workflow_dispatch`).
+
+**Pipeline stages**
+
+| Stage | What it does |
+|-------|-------------|
+| Validate | YAML syntax check on all manifests; Gitleaks secret scan |
+| Deploy | Azure login → `kubectl apply` all manifests → Helm upgrade (kube-prometheus-stack, loki-stack, cert-manager, ingress-nginx) |
+| DNS | Reads the ingress-nginx LoadBalancer IP and upserts A records for all four subdomains via Cloudflare API |
+| Verify | `kubectl rollout status` on each deployment to confirm healthy rollout |
+
+**GitHub Actions secrets required**
+
+| Secret | Used for |
+|--------|---------|
+| `AZURE_CREDENTIALS` | Service principal login to AKS |
+| `GH_PAT` | Checkout (allows workflow to read the repo) |
+| `CLOUDFLARE_API_TOKEN` | DNS record upsert |
+| `GRAFANA_ADMIN_PASSWORD` | Grafana admin Kubernetes Secret |
+| `SNOW_PASS` | ServiceNow credentials Kubernetes Secret |
+
+Typical deploy time: **3–4 minutes** from push to running pods.
+
+---
+
 ## Key commands
 
 ```bash
