@@ -1,7 +1,6 @@
----
-layout: default
-title: AKS Lab — hl0.dev
----
+# k8s-test02 — hl0.dev lab
+
+Personal Kubernetes lab running on Azure Kubernetes Service.
 
 ## Cluster
 
@@ -55,68 +54,9 @@ title: AKS Lab — hl0.dev
 
 ---
 
-## Architecture
-
-```mermaid
-graph LR
-    Browser(["Browser"]) --> CF["Cloudflare\nDNS"]
-    CF --> LB["Azure LoadBalancer\n(ingress-nginx)"]
-
-    subgraph AKS["AKS — West Europe"]
-        LB --> ING["ingress-nginx\nTLS termination"]
-
-        subgraph lab["Namespace: lab"]
-            ING -->|doom.hl0.dev| DD["doom-dashboard\nnginx + python sidecar"]
-            ING -->|test02.hl0.dev| NX["nginx ×2"]
-            ING -->|status.hl0.dev| UK["uptimekuma"]
-            DD -->|proxy /doom/| DOOM["doom WASM"]
-            NX --> MDB[("mariadb\n5 Gi")]
-        end
-
-        subgraph monitoring["Namespace: monitoring"]
-            ING -->|grafana.hl0.dev| GF["Grafana"]
-            PROM["Prometheus\n5 Gi"] --> GF
-            LOKI["Loki"] --> GF
-            PT["Promtail\nDaemonSet"] --> LOKI
-        end
-
-        DD -->|PromQL| PROM
-        DD -->|LogQL| LOKI
-        DD -->|REST API| SNOW["ServiceNow\nexternal"]
-        DD -->|geo lookup| IPAPI["ipapi.co\nexternal"]
-    end
-```
-
----
-
-## Security
-
-| Layer | Implementation |
-|-------|----------------|
-| TLS | cert-manager + Let's Encrypt DNS-01 (Cloudflare), HSTS on all endpoints |
-| Network | Default-deny `NetworkPolicy` in `lab`; per-workload ingress/egress allow rules |
-| Containers | `runAsNonRoot`, `readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`, `seccompProfile: RuntimeDefault` |
-| Secrets | Kubernetes Secrets for all credentials; GitHub Actions secrets for CI — nothing hardcoded in manifests |
-| Ingress | `allowSnippetAnnotations: false` (ingress-nginx safe default) |
-
----
-
-## Storage
-
-| PVC | Namespace | Size | Consumer |
-|-----|-----------|------|----------|
-| mariadb-data | lab | 5 Gi | MariaDB |
-| uptimekuma-data | lab | 1 Gi | Uptime Kuma |
-| grafana | monitoring | 2 Gi | Grafana |
-| prometheus-db | monitoring | 5 Gi | Prometheus |
-
----
-
 ## CI/CD
 
-Every push to `main` that touches `k8s/**` or `.github/workflows/deploy.yml` triggers the **Deploy to AKS** workflow automatically. A manual run can be started from the Actions tab at any time (`workflow_dispatch`).
-
-**Pipeline stages**
+Every push to `main` that touches `k8s/**` or `.github/workflows/deploy.yml` triggers the **Deploy to AKS** workflow automatically. A manual run can be started from the Actions tab (`workflow_dispatch`).
 
 | Stage | What it does |
 |-------|-------------|
@@ -130,12 +70,35 @@ Every push to `main` that touches `k8s/**` or `.github/workflows/deploy.yml` tri
 | Secret | Used for |
 |--------|---------|
 | `AZURE_CREDENTIALS` | Service principal login to AKS |
-| `GH_PAT` | Checkout (allows workflow to read the repo) |
+| `GH_PAT` | Checkout |
 | `CLOUDFLARE_API_TOKEN` | DNS record upsert |
 | `GRAFANA_ADMIN_PASSWORD` | Grafana admin Kubernetes Secret |
 | `SNOW_PASS` | ServiceNow credentials Kubernetes Secret |
 
 Typical deploy time: **3–4 minutes** from push to running pods.
+
+---
+
+## Security
+
+| Layer | Implementation |
+|-------|----------------|
+| TLS | cert-manager + Let's Encrypt DNS-01 (Cloudflare), HSTS on all endpoints |
+| Network | Default-deny `NetworkPolicy` in `lab`; per-workload ingress/egress allow rules |
+| Containers | `runAsNonRoot`, `readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`, `seccompProfile: RuntimeDefault` |
+| Secrets | Kubernetes Secrets for all credentials; GitHub Actions secrets for CI |
+| Ingress | `allowSnippetAnnotations: false` (ingress-nginx safe default) |
+
+---
+
+## Storage
+
+| PVC | Namespace | Size | Consumer |
+|-----|-----------|------|----------|
+| mariadb-data | lab | 5 Gi | MariaDB |
+| uptimekuma-data | lab | 1 Gi | Uptime Kuma |
+| grafana | monitoring | 2 Gi | Grafana |
+| prometheus-db | monitoring | 5 Gi | Prometheus |
 
 ---
 
