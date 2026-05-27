@@ -329,6 +329,63 @@ data:
                 monitors[name]['ping'] = val
         return list(monitors.values())
 
+    # Match explicit level field in logfmt, JSON, or nginx bracket format.
+    # Excludes level=info lines — only error/warn/fatal are included.
+    _LVL_RE = re.compile(
+        r'\blevel[=:"]+\s*(error|fatal|critical|warn|warning)\b'
+        r'|"level"\s*:\s*"(error|fatal|critical|warn|warning)"'
+        r'|\[(error|warn)\]', re.I)
+    _MSG_RE = re.compile(r'\bmsg="([^"]+)"|\bmsg=([^\s}]+)|"msg"\s*:\s*"([^"]+)"', re.I)
+    _TS_RE  = re.compile(r'^[\d\-T:.Z\s]{5,32}')
+    # Nginx error log prefix: date [level] pid#tid: *cid message
+    _NGX_PFX = re.compile(r'^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} \[\w+\] \d+#\d+: \*?\d* ?')
+
+    def _log_level(line):
+        m = _LVL_RE.search(line)
+        if not m:
+            return None
+        hit = next(g for g in m.groups() if g).lower()
+        return 'err' if hit in ('error', 'fatal', 'critical') else 'wrn'
+
+    def _log_msg(line):
+        m = _MSG_RE.search(line)
+        if m:
+            return next(g for g in m.groups() if g)
+        s = _NGX_PFX.sub('', line)
+        return _TS_RE.sub('', s).strip()
+
+    def _fetch_logs():
+        now_ns   = int(time.time() * 1_000_000_000)
+        start_ns = now_ns - 15 * 60 * 1_000_000_000
+        params   = urllib.parse.urlencode({
+            "query": ('{namespace=~"lab|monitoring|cert-manager|ingress-nginx"}'
+                      ' |~ "(?i)(level=(error|fatal|critical|warn|warning)|[[]error[]]|[[]warn[]]) "'),
+            "limit": "100",
+            "start": str(start_ns),
+            "end":   str(now_ns),
+            "direction": "backward",
+        })
+        with urllib.request.urlopen(LOKI + "/loki/api/v1/query_range?" + params, timeout=8) as r:
+            data = json.load(r)
+        best = {}
+        for stream in data.get("data", {}).get("result", []):
+            ns = stream.get("stream", {}).get("namespace", "")
+            for ts_ns, line in stream.get("values", []):
+                lvl = _log_level(line)
+                if lvl is None:
+                    continue
+                ts_sec = int(ts_ns) // 1_000_000_000
+                msg    = _log_msg(line)
+                key    = (ns, msg[:50])
+                if key not in best or ts_sec > best[key][0]:
+                    best[key] = (ts_sec, ns, msg, lvl)
+        result = []
+        for ts_sec, ns, msg, lvl in sorted(best.values(), key=lambda x: x[0], reverse=True)[:15]:
+            t = time.gmtime(ts_sec)
+            result.append({"ts":  f"{t.tm_hour:02d}:{t.tm_min:02d}:{t.tm_sec:02d}",
+                           "ns":  ns, "msg": msg[:90], "lvl": lvl})
+        return result
+
     def _fetch_chart():
         end   = int(time.time())
         start = end - 5 * 60   # 5-minute live window
@@ -402,9 +459,10 @@ data:
     _geo_cache    = []
     _uptime_cache = []
     _chart_cache  = {}
+    _log_cache    = []
 
     def _loop():
-        global _snow_tick, _snow_cache, _geo_cache, _uptime_cache, _chart_cache
+        global _snow_tick, _snow_cache, _geo_cache, _uptime_cache, _chart_cache, _log_cache
         while True:
             try:
                 data = _fetch()
@@ -428,6 +486,10 @@ data:
                         _uptime_cache[:] = _fetch_uptime()
                     except Exception as e:
                         print(f"[uk] fetch: {e}", flush=True)
+                    try:
+                        _log_cache[:] = _fetch_logs()
+                    except Exception as e:
+                        print(f"[log] fetch: {e}", flush=True)
                 _snow_tick += 1
                 try:
                     c = _fetch_chart()
@@ -443,6 +505,8 @@ data:
                     data['uptime'] = list(_uptime_cache)
                 if _chart_cache:
                     data['chart'] = dict(_chart_cache)
+                if _log_cache is not None:
+                    data['logs'] = list(_log_cache)
                 with _lock:
                     _cache.clear()
                     _cache.update(data)
@@ -584,6 +648,15 @@ data:
         .geo-flag{font-size:15px;flex-shrink:0;width:22px;text-align:center}
         .geo-loc{font-size:13px;color:var(--tx);flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
         .geo-ct{font-size:12px;color:var(--amb);flex-shrink:0;font-variant-numeric:tabular-nums;min-width:24px;text-align:right}
+        #log-sec{padding:10px 14px;flex:1;overflow-y:auto;min-height:0;border-top:1px solid var(--bdr)}
+        .log-row{display:flex;align-items:baseline;gap:5px;margin-bottom:4px;line-height:1.2}
+        .log-lvl{font-size:9px;font-weight:bold;flex-shrink:0;width:16px;text-align:center;
+          padding:1px 0;border-radius:2px;letter-spacing:0}
+        .log-lvl.err{background:rgba(255,34,0,.18);color:var(--rhi)}
+        .log-lvl.wrn{background:rgba(208,128,0,.18);color:var(--amb)}
+        .log-ts{font-size:10px;color:var(--dim);flex-shrink:0;font-variant-numeric:tabular-nums;width:48px}
+        .log-ns{font-size:10px;flex-shrink:0;width:56px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+        .log-msg{font-size:11px;color:var(--tx);flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
         #pod-sec{padding:12px 14px;flex:1;overflow-y:auto;min-height:0;border-bottom:1px solid var(--bdr)}
         .pgrp{margin-bottom:10px}
         .pgrp-hd{
@@ -647,9 +720,13 @@ data:
           <div class="rrow"><div class="rl">HITS &middot; 1 HR</div><div class="rv sm" id="h1">&mdash;</div></div>
           <div id="spark"></div>
         </div>
-        <div class="sec" style="flex:1;overflow-y:auto;min-height:0">
+        <div class="sec">
           <div class="sec-hd">&#127760; ingress &middot; req/s</div>
           <div id="ing"><div class="irow"><div class="iname" style="color:#222">loading&hellip;</div></div></div>
+        </div>
+        <div id="log-sec">
+          <div class="sec-hd" style="margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--bdr)">&#9888; error log &middot; 15m</div>
+          <div id="log-list"><div class="log-row"><span class="log-msg" style="color:#333">loading&hellip;</span></div></div>
         </div>
       </div>
       <div id="game">
@@ -898,6 +975,17 @@ data:
               :'<div class="inc-row"><span class="inc-desc" style="color:#555">no open incidents</span></div>';
           }
           if(d.chart){ lastChart = d.chart; drawChart(d.chart); }
+          if(d.logs!=null){
+            document.getElementById('log-list').innerHTML=d.logs.length
+              ?d.logs.map(function(l){
+                  return '<div class="log-row">'+
+                    '<span class="log-lvl '+l.lvl+'">'+(l.lvl==='err'?'E':'W')+'</span>'+
+                    '<span class="log-ts">'+l.ts+'</span>'+
+                    '<span class="log-ns" style="color:'+nsColor(l.ns)+'">'+l.ns+'</span>'+
+                    '<span class="log-msg">'+l.msg+'</span></div>';
+                }).join('')
+              :'<div class="log-row"><span class="log-msg" style="color:#444">no recent errors</span></div>';
+          }
           var ings=d.ingress||[];
           document.getElementById('ing').innerHTML=ings.length
             ?ings.map(function(r){
