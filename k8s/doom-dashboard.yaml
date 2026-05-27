@@ -300,8 +300,8 @@ data:
                 print(f"[snow] alert eval ({rule['key']}): {e}", flush=True)
         return firing
 
-    _ST_RE   = re.compile(r'^monitor_status\{[^}]*monitor_name="([^"]+)"[^}]*\}\s+([\d.]+)', re.M)
-    _PING_RE = re.compile(r'^monitor_response_time\{[^}]*monitor_name="([^"]+)"[^}]*\}\s+([\d.]+)', re.M)
+    _UK_LINE_RE = re.compile(r'^(monitor_status|monitor_response_time)\{([^}]+)\}\s+([\d.]+)', re.M)
+    _UK_LBL_RE  = re.compile(r'(\w+)="([^"]*)"')
 
     def _fetch_uptime():
         if not UK_KEY:
@@ -312,12 +312,22 @@ data:
             headers={"Authorization": f"Basic {creds}", "Accept": "text/plain"})
         with urllib.request.urlopen(req, timeout=8) as r:
             raw = r.read().decode()
-        status_map = {m.group(1): int(float(m.group(2))) for m in _ST_RE.finditer(raw)}
-        ping_map   = {m.group(1): float(m.group(2)) for m in _PING_RE.finditer(raw)}
-        return [
-            {"name": name, "status": status, "ping": ping_map.get(name), "up24": None}
-            for name, status in status_map.items()
-        ]
+        monitors = {}
+        for m in _UK_LINE_RE.finditer(raw):
+            metric = m.group(1)
+            labels = dict(_UK_LBL_RE.findall(m.group(2)))
+            val    = float(m.group(3))
+            name   = labels.get('monitor_name', '')
+            if not name:
+                continue
+            if name not in monitors:
+                monitors[name] = {'name': name, 'url': labels.get('monitor_url', ''),
+                                  'status': None, 'ping': None, 'up24': None}
+            if metric == 'monitor_status':
+                monitors[name]['status'] = int(val)
+            else:
+                monitors[name]['ping'] = val
+        return list(monitors.values())
 
     def _fetch_chart():
         end   = int(time.time())
@@ -568,6 +578,8 @@ data:
         .uk-name{flex:1;font-size:13px;color:var(--tx);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
         .uk-ping{font-size:12px;color:var(--amb);flex-shrink:0;font-variant-numeric:tabular-nums;width:46px;text-align:right}
         .uk-up{font-size:10px;color:var(--dim);flex-shrink:0;width:40px;text-align:right}
+        a.uk-name{color:var(--tx);text-decoration:none}
+        a.uk-name:hover{color:var(--grn);text-shadow:0 0 4px rgba(0,168,72,.5)}
         .geo-row{display:flex;align-items:center;gap:8px;margin-bottom:5px}
         .geo-flag{font-size:15px;flex-shrink:0;width:22px;text-align:center}
         .geo-loc{font-size:13px;color:var(--tx);flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
@@ -838,9 +850,12 @@ data:
               var dc=m.status===1?'up':(m.status===0?'down':'unk');
               var ping=m.ping!=null?m.ping+'ms':'—';
               var up=m.up24!=null?m.up24.toFixed(1)+'%':'';
+              var nameEl=m.url
+                ?'<a href="'+m.url+'" target="_blank" rel="noopener" class="uk-name">'+m.name+'</a>'
+                :'<span class="uk-name">'+m.name+'</span>';
               return '<div class="uk-row">'+
                 '<span class="uk-dot '+dc+'"></span>'+
-                '<span class="uk-name">'+m.name+'</span>'+
+                nameEl+
                 '<span class="uk-ping">'+ping+'</span>'+
                 '<span class="uk-up">'+up+'</span></div>';
             }).join('');
