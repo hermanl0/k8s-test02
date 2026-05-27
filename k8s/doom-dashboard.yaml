@@ -56,6 +56,7 @@ data:
     from http.server import BaseHTTPRequestHandler, HTTPServer
 
     PROM      = "http://kube-prometheus-stack-prometheus.monitoring:9090/api/v1/query"
+    PROM_RANGE = "http://kube-prometheus-stack-prometheus.monitoring:9090/api/v1/query_range"
     SNOW_URL  = os.environ.get('SNOW_URL', '').rstrip('/')
     SNOW_USER = os.environ.get('SNOW_USER', '')
     SNOW_PASS = os.environ.get('SNOW_PASS', '')
@@ -75,6 +76,11 @@ data:
     INGRESS_Q = 'sort_desc(sum by (ingress)(rate(nginx_ingress_controller_requests[2m])))'
     PODS_Q    = 'kube_pod_status_phase == 1'
     LOKI      = "http://loki-stack.monitoring:3100"
+    CHART_QUERIES = {
+        "cpu": '(1 - avg(rate(node_cpu_seconds_total{mode="idle"}[2m]))) * 100',
+        "mem": '(1 - avg(node_memory_MemAvailable_bytes)/avg(node_memory_MemTotal_bytes)) * 100',
+        "rps": 'sum(rate(nginx_ingress_controller_requests{ingress="doom-ingress"}[2m]))*60 or vector(0)',
+    }
 
     # Match only the leading $remote_addr in nginx access log lines.
     # Scanning the full line picks up IPs in User-Agent strings (e.g. Chrome/148.0.0.0).
@@ -313,6 +319,24 @@ data:
             for name, status in status_map.items()
         ]
 
+    def _fetch_chart():
+        end   = int(time.time())
+        start = end - 30 * 60
+        step  = 60
+        out   = {}
+        for key, q in CHART_QUERIES.items():
+            url = (PROM_RANGE + "?query=" + urllib.parse.quote(q)
+                   + f"&start={start}&end={end}&step={step}s")
+            try:
+                with urllib.request.urlopen(url, timeout=8) as r:
+                    d = json.load(r)
+                series = d.get("data", {}).get("result", [])
+                out[key] = [[int(v[0]), float(v[1])] for v in series[0]["values"]] if series else []
+            except Exception as e:
+                print(f"[chart] {key}: {e}", flush=True)
+                out[key] = []
+        return out
+
     # Open incidents: state IN (1=New, 2=In Progress, 3=On Hold).
     # Resolved (6) and Closed (7) are excluded — active flag stays true at state=6.
     _SNOW_OPEN_Q = "correlation_idSTARTSWITHk8s-lab%3A%5EstateIN1%2C2%2C3"
@@ -367,9 +391,10 @@ data:
     _snow_cache   = {}
     _geo_cache    = []
     _uptime_cache = []
+    _chart_cache  = {}
 
     def _loop():
-        global _snow_tick, _snow_cache, _geo_cache, _uptime_cache
+        global _snow_tick, _snow_cache, _geo_cache, _uptime_cache, _chart_cache
         while True:
             try:
                 data = _fetch()
@@ -393,6 +418,12 @@ data:
                         _uptime_cache[:] = _fetch_uptime()
                     except Exception as e:
                         print(f"[uk] fetch: {e}", flush=True)
+                    try:
+                        c = _fetch_chart()
+                        _chart_cache.clear()
+                        _chart_cache.update(c)
+                    except Exception as e:
+                        print(f"[chart] fetch: {e}", flush=True)
                 _snow_tick += 1
                 if _snow_cache:
                     data['snow'] = dict(_snow_cache)
@@ -400,6 +431,8 @@ data:
                     data['geo'] = list(_geo_cache)
                 if _uptime_cache:
                     data['uptime'] = list(_uptime_cache)
+                if _chart_cache:
+                    data['chart'] = dict(_chart_cache)
                 with _lock:
                     _cache.clear()
                     _cache.update(data)
@@ -481,8 +514,13 @@ data:
         }
         .col:first-child{border-right:2px solid var(--bdr)}
         .col:last-child{border-left:2px solid var(--bdr)}
-        #game{flex:1;background:#000;overflow:hidden}
-        #game iframe{width:100%;height:100%;border:none;display:block}
+        #game{flex:1;background:#000;overflow:hidden;display:flex;flex-direction:column}
+        #game iframe{flex:1;border:none;display:block;width:100%;min-height:0}
+        #chart-panel{height:170px;background:var(--bg2);border-top:2px solid var(--bdr);flex-shrink:0;padding:6px 14px 8px;overflow:hidden}
+        #chart-hd{font-size:10px;letter-spacing:2px;color:var(--dim);text-transform:uppercase;margin-bottom:5px;display:flex;justify-content:space-between;align-items:center}
+        .ch-leg{display:flex;gap:14px;font-size:10px;color:var(--dim)}
+        .ch-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:3px;vertical-align:middle}
+        #mchart{display:block;width:100%}
         .sec{border-bottom:1px solid var(--bdr);padding:12px 14px;flex-shrink:0}
         .sec-hd{
           font-size:11px;letter-spacing:3px;color:var(--dim);text-transform:uppercase;
@@ -604,6 +642,17 @@ data:
       </div>
       <div id="game">
         <iframe src="/doom/" allowfullscreen title="DOOM"></iframe>
+        <div id="chart-panel">
+          <div id="chart-hd">
+            <span>&#128200; cluster metrics &middot; 30m</span>
+            <span class="ch-leg">
+              <span><span class="ch-dot" style="background:var(--grn)"></span>cpu%</span>
+              <span><span class="ch-dot" style="background:var(--amb)"></span>mem%</span>
+              <span><span class="ch-dot" style="background:#4488ff"></span>req/min</span>
+            </span>
+          </div>
+          <canvas id="mchart" height="118"></canvas>
+        </div>
       </div>
       <div class="col">
         <div class="sec">
@@ -699,6 +748,66 @@ data:
         document.getElementById('pods').innerHTML=html;
       }
 
+      var lastChart = null;
+      function drawChart(chart){
+        var cv = document.getElementById('mchart');
+        if(!cv) return;
+        var W = cv.offsetWidth;
+        if(W < 10) return;
+        var H = parseInt(cv.getAttribute('height') || '118');
+        cv.width = W;
+        var ctx = cv.getContext('2d');
+        ctx.clearRect(0, 0, W, H);
+        var padB = 12;
+        var drawH = H - padB;
+        // grid lines
+        [25, 50, 75].forEach(function(pct){
+          ctx.strokeStyle = '#1c1c1c';
+          ctx.lineWidth = 1;
+          var y = Math.round((1 - pct / 100) * drawH) + 0.5;
+          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+          ctx.fillStyle = '#2e2e2e'; ctx.font = '8px monospace';
+          ctx.fillText(pct + '%', 2, y - 2);
+        });
+        // time axis labels
+        var ref = (chart && chart.cpu && chart.cpu.length) ? chart.cpu : (chart && chart.mem ? chart.mem : []);
+        if(ref.length >= 2){
+          ctx.fillStyle = '#2a2a2a'; ctx.font = '8px monospace';
+          ctx.textAlign = 'left';  ctx.fillText('30m ago', 2, H - 2);
+          ctx.textAlign = 'right'; ctx.fillText('now', W - 2, H - 2);
+          ctx.textAlign = 'left';
+        }
+        if(!chart) return;
+        function drawSeries(points, maxVal, color, fillColor){
+          if(!points || !points.length) return;
+          var ts0 = points[0][0], ts1 = points[points.length - 1][0], rng = ts1 - ts0 || 1;
+          function px(p){ return (p[0] - ts0) / rng * W; }
+          function py(p){ var v = Math.min(Math.max(p[1], 0), maxVal); return (1 - v / maxVal) * drawH + 1; }
+          // area fill
+          ctx.beginPath();
+          ctx.moveTo(px(points[0]), drawH + 1);
+          points.forEach(function(p){ ctx.lineTo(px(p), py(p)); });
+          ctx.lineTo(px(points[points.length - 1]), drawH + 1);
+          ctx.closePath();
+          ctx.fillStyle = fillColor; ctx.fill();
+          // glow line
+          ctx.beginPath();
+          points.forEach(function(p, i){
+            i === 0 ? ctx.moveTo(px(p), py(p)) : ctx.lineTo(px(p), py(p));
+          });
+          ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+          ctx.shadowBlur = 6; ctx.shadowColor = color;
+          ctx.stroke(); ctx.shadowBlur = 0;
+        }
+        // req/min — auto-scaled to its own max so low traffic still shows shape
+        var rps = chart.rps || [];
+        var rpsMax = rps.reduce(function(a, p){ return Math.max(a, p[1]); }, 1);
+        drawSeries(rps, rpsMax, '#3366cc', 'rgba(51,102,204,0.07)');
+        drawSeries(chart.mem || [], 100, '#d08000', 'rgba(208,128,0,0.10)');
+        drawSeries(chart.cpu || [], 100, '#00a848', 'rgba(0,168,72,0.10)');
+      }
+      window.addEventListener('resize', function(){ if(lastChart) drawChart(lastChart); });
+
       async function tick(){
         try{
           var d=await fetch('/metrics-data').then(function(r){return r.json();});
@@ -769,6 +878,7 @@ data:
                 }).join('')
               :'<div class="inc-row"><span class="inc-desc" style="color:#555">no open incidents</span></div>';
           }
+          if(d.chart){ lastChart = d.chart; drawChart(d.chart); }
           var ings=d.ingress||[];
           document.getElementById('ing').innerHTML=ings.length
             ?ings.map(function(r){
@@ -787,7 +897,7 @@ data:
           console.error(e);
         }
       }
-      drawSpark();tick();setInterval(tick,5000);
+      drawSpark();drawChart(null);tick();setInterval(tick,5000);
     </script>
     </body>
     </html>
