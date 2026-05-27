@@ -709,7 +709,7 @@ data:
           </div>
         </div>
         <div class="sec">
-          <div class="sec-hd">&#128994; uptime kuma</div>
+          <div class="sec-hd"><a href="https://status.hl0.dev/status/home" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">&#128994; uptime kuma</a></div>
           <div id="uk-list"><div class="uk-row"><span class="uk-name" style="color:#333">loading&hellip;</span></div></div>
         </div>
         <div class="sec">
