@@ -199,7 +199,7 @@ data:
     <html lang="en">
     <head>
       <meta charset="UTF-8">
-      <title>doom.hl0.dev</title>
+      <title>doom.hl0.dev — ops center</title>
       <style>
         *{margin:0;padding:0;box-sizing:border-box}
         :root{
@@ -223,46 +223,57 @@ data:
         .dot.err{background:var(--rhi);box-shadow:0 0 6px var(--rhi);animation:none}
         .dot.init{background:var(--amb);box-shadow:0 0 6px var(--amb)}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-
-        #layout{display:flex;height:calc(100vh - 42px)}
-        #game{flex:1;background:#000;border-right:2px solid var(--bdr);overflow:hidden}
-        #game iframe{width:100%;height:100%;border:none;display:block}
-
-        #panel{
-          width:360px;min-width:360px;background:var(--bg2);
+        #statsbar{
+          height:58px;background:var(--bg2);border-bottom:2px solid var(--bdr);
+          display:flex;align-items:stretch;flex-shrink:0
+        }
+        .st{flex:1;text-align:center;display:flex;flex-direction:column;
+          justify-content:center;border-right:1px solid var(--bdr);padding:4px 0}
+        .st:last-child{border-right:none}
+        .sv{font-size:22px;font-variant-numeric:tabular-nums;line-height:1.1;color:var(--amb)}
+        .sv.ok{color:var(--grn)}.sv.warn{color:var(--amb)}.sv.crit{color:var(--rhi)}
+        .sl{font-size:9px;letter-spacing:2px;color:var(--dim);margin-top:2px;text-transform:uppercase}
+        #layout{display:flex;height:calc(100vh - 100px)}
+        .col{
+          width:310px;min-width:310px;background:var(--bg2);
           display:flex;flex-direction:column;overflow:hidden
         }
+        .col:first-child{border-right:2px solid var(--bdr)}
+        .col:last-child{border-left:2px solid var(--bdr)}
+        #game{flex:1;background:#000;overflow:hidden}
+        #game iframe{width:100%;height:100%;border:none;display:block}
         .sec{border-bottom:1px solid var(--bdr);padding:12px 14px;flex-shrink:0}
         .sec-hd{
           font-size:11px;letter-spacing:3px;color:var(--dim);text-transform:uppercase;
           margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid var(--bdr)
         }
-
-        /* resource bars */
         .brow{display:flex;align-items:center;margin-bottom:10px}
         .bl{width:44px;font-size:14px;color:var(--dim)}
         .bt{flex:1;height:10px;background:var(--bg3);margin:0 10px;border:1px solid #1a1a1a;border-radius:2px}
         .bf{height:100%;background:var(--grn);transition:width .6s ease;border-radius:2px}
         .bf.w{background:var(--amb)}.bf.c{background:var(--rhi)}
         .bv{width:46px;text-align:right;font-size:14px;color:var(--tx)}
-
-        /* fleet counters */
-        .nums{display:flex;justify-content:space-around;padding:6px 0}
-        .nb{text-align:center}
-        .nv{font-size:52px;color:var(--amb);line-height:1;
-          text-shadow:0 0 12px rgba(208,128,0,.4);font-variant-numeric:tabular-nums}
-        .nl{font-size:12px;color:var(--dim);letter-spacing:2px;margin-top:4px}
-
-        /* doom traffic */
         .rrow{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px}
         .rl{font-size:14px;color:var(--dim)}
         .rv{font-size:28px;color:var(--amb);text-shadow:0 0 8px rgba(208,128,0,.3);font-variant-numeric:tabular-nums}
         .rv.sm{font-size:20px}
         #spark{display:flex;align-items:flex-end;gap:2px;height:48px;margin-top:10px}
         .sb{flex:1;background:var(--red);min-height:2px;border-radius:1px 1px 0 0;transition:height .4s ease}
-
-        /* pod roster */
-        #pod-sec{border-bottom:1px solid var(--bdr);padding:12px 14px;flex:1;overflow-y:auto;min-height:0}
+        .snow-p{display:flex;justify-content:space-around;padding:4px 0 8px}
+        .snow-pb{text-align:center}
+        .snow-pv{font-size:34px;line-height:1;font-variant-numeric:tabular-nums}
+        .snow-pl{font-size:10px;color:var(--dim);letter-spacing:2px;margin-top:3px}
+        .snow-p1{color:var(--rhi);text-shadow:0 0 8px rgba(255,34,0,.35)}
+        .snow-p2{color:var(--amb);text-shadow:0 0 8px rgba(208,128,0,.3)}
+        .snow-p3{color:#b0b000}
+        .snow-p4{color:var(--dim)}
+        .inc-row{display:flex;align-items:baseline;gap:6px;margin-bottom:4px}
+        .inc-num{font-size:11px;color:var(--dim);flex-shrink:0}
+        .inc-desc{font-size:12px;color:var(--tx);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+        .irow{display:flex;justify-content:space-between;margin-bottom:6px;font-size:14px}
+        .iname{color:var(--dim);flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+        .irps{color:var(--amb);margin-left:10px;flex-shrink:0}
+        #pod-sec{padding:12px 14px;flex:1;overflow-y:auto;min-height:0;border-bottom:1px solid var(--bdr)}
         .pgrp{margin-bottom:10px}
         .pgrp-hd{
           font-size:10px;letter-spacing:2px;text-transform:uppercase;
@@ -276,28 +287,8 @@ data:
         .pdot.pend{background:var(--amb);box-shadow:0 0 4px var(--amb)}
         .pdot.fail{background:var(--rhi);box-shadow:0 0 4px var(--rhi)}
         .pname{font-size:13px;color:var(--tx);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-
-        /* servicenow */
-        .snow-p{display:flex;justify-content:space-around;padding:4px 0 8px}
-        .snow-pb{text-align:center}
-        .snow-pv{font-size:36px;line-height:1;font-variant-numeric:tabular-nums}
-        .snow-pl{font-size:10px;color:var(--dim);letter-spacing:2px;margin-top:3px}
-        .snow-p1{color:var(--rhi);text-shadow:0 0 8px rgba(255,34,0,.35)}
-        .snow-p2{color:var(--amb);text-shadow:0 0 8px rgba(208,128,0,.3)}
-        .snow-p3{color:#b0b000}
-        .snow-p4{color:var(--dim)}
-        .inc-row{display:flex;align-items:baseline;gap:6px;margin-bottom:4px}
-        .inc-num{font-size:11px;color:var(--dim);flex-shrink:0}
-        .inc-desc{font-size:12px;color:var(--tx);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-
-        /* ingress */
-        .irow{display:flex;justify-content:space-between;margin-bottom:6px;font-size:14px}
-        .iname{color:var(--dim);flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-        .irps{color:var(--amb);margin-left:10px;flex-shrink:0}
-
         #footer{padding:8px 14px;font-size:11px;color:#2a2a2a;
           border-top:1px solid var(--bdr);flex-shrink:0}
-
         ::-webkit-scrollbar{width:3px}
         ::-webkit-scrollbar-track{background:var(--bg2)}
         ::-webkit-scrollbar-thumb{background:#303030}
@@ -311,12 +302,16 @@ data:
         <span id="ts">&mdash;</span>
       </div>
     </header>
+    <div id="statsbar">
+      <div class="st"><div class="sv" id="sc-pods">&mdash;</div><div class="sl">pods</div></div>
+      <div class="st"><div class="sv" id="sc-nodes">&mdash;</div><div class="sl">nodes</div></div>
+      <div class="st"><div class="sv" id="sc-cpu">&mdash;</div><div class="sl">cpu</div></div>
+      <div class="st"><div class="sv" id="sc-mem">&mdash;</div><div class="sl">mem</div></div>
+      <div class="st"><div class="sv snow-p1" id="sc-p1">&mdash;</div><div class="sl">p1 inc</div></div>
+      <div class="st"><div class="sv snow-p2" id="sc-p2">&mdash;</div><div class="sl">p2 inc</div></div>
+    </div>
     <div id="layout">
-      <div id="game">
-        <iframe src="/doom/" allowfullscreen title="DOOM"></iframe>
-      </div>
-      <div id="panel">
-
+      <div class="col">
         <div class="sec">
           <div class="sec-hd">&#9889; node resources</div>
           <div class="brow">
@@ -330,7 +325,6 @@ data:
             <div class="bv" id="mem-v">&mdash;</div>
           </div>
         </div>
-
         <div class="sec">
           <div class="sec-hd">&#128128; doom traffic</div>
           <div class="rrow"><div class="rl">REQ / SEC</div><div class="rv" id="rps">&mdash;</div></div>
@@ -338,16 +332,15 @@ data:
           <div class="rrow"><div class="rl">HITS &middot; 1 HR</div><div class="rv sm" id="h1">&mdash;</div></div>
           <div id="spark"></div>
         </div>
-
-        <div class="sec">
-          <div class="sec-hd">&#128760; fleet</div>
-          <div class="nums">
-            <div class="nb"><div class="nv" id="n-p">&mdash;</div><div class="nl">PODS</div></div>
-            <div class="nb"><div class="nv" id="n-n">&mdash;</div><div class="nl">NODES</div></div>
-            <div class="nb"><div class="nv" id="n-s">&mdash;</div><div class="nl">NS</div></div>
-          </div>
+        <div class="sec" style="flex:1;overflow-y:auto;min-height:0">
+          <div class="sec-hd">&#127760; ingress &middot; req/s</div>
+          <div id="ing"><div class="irow"><div class="iname" style="color:#222">loading&hellip;</div></div></div>
         </div>
-
+      </div>
+      <div id="game">
+        <iframe src="/doom/" allowfullscreen title="DOOM"></iframe>
+      </div>
+      <div class="col">
         <div class="sec">
           <div class="sec-hd">&#9889; servicenow</div>
           <div class="snow-p">
@@ -358,17 +351,10 @@ data:
           </div>
           <div id="sn-inc"><div class="inc-row"><span class="inc-desc" style="color:#333">loading&hellip;</span></div></div>
         </div>
-
         <div id="pod-sec">
           <div class="sec-hd" style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--bdr)">&#128187; pod roster</div>
           <div id="pods"><div class="prow"><span class="pname" style="color:#333">loading&hellip;</span></div></div>
         </div>
-
-        <div class="sec" style="flex-shrink:0">
-          <div class="sec-hd">&#127760; ingress &middot; req/s</div>
-          <div id="ing"><div class="irow"><div class="iname" style="color:#222">loading&hellip;</div></div></div>
-        </div>
-
         <div id="footer">auto-refresh every 5s</div>
       </div>
     </div>
@@ -386,13 +372,10 @@ data:
 
       function shortPod(n){
         var m;
-        // Deployment: strip rs-hash (9-10 hex) + pod-hash (4-5 alnum)
         m = n.match(/^(.+)-[a-f0-9]{9,10}-[a-z0-9]{4,5}$/);
         if(m) return m[1];
-        // StatefulSet: ends in -\d+
         m = n.match(/^(.+)-(\d+)$/);
         if(m && m[1].length > 2) return m[1]+'-'+m[2];
-        // DaemonSet: strip trailing 5-char hash
         m = n.match(/^(.+)-[a-z0-9]{5}$/);
         if(m) return m[1];
         return n;
@@ -403,6 +386,12 @@ data:
         b.style.width=pct+'%';
         b.className='bf'+(pct>=85?' c':pct>=65?' w':'');
         document.getElementById(vi).textContent=pct+'%';
+      }
+
+      function statVal(id,val,warn,crit){
+        var el=document.getElementById(id);
+        el.textContent=val;
+        el.className='sv'+(parseFloat(val)>=crit?' crit':parseFloat(val)>=warn?' warn':' ok');
       }
 
       function drawSpark(){
@@ -437,16 +426,27 @@ data:
       async function tick(){
         try{
           var d=await fetch('/metrics-data').then(function(r){return r.json();});
-          if(d.cpu!=null) bar('cpu-b','cpu-v',Math.round(d.cpu));
-          if(d.mem!=null) bar('mem-b','mem-v',Math.round(d.mem));
+          if(d.cpu!=null){
+            bar('cpu-b','cpu-v',Math.round(d.cpu));
+            statVal('sc-cpu',Math.round(d.cpu)+'%',65,85);
+          }
+          if(d.mem!=null){
+            bar('mem-b','mem-v',Math.round(d.mem));
+            statVal('sc-mem',Math.round(d.mem)+'%',65,85);
+          }
+          if(d.pods!=null){
+            var ep=document.getElementById('sc-pods');
+            ep.textContent=Math.round(d.pods);ep.className='sv';
+          }
+          if(d.nodes!=null){
+            var en=document.getElementById('sc-nodes');
+            en.textContent=Math.round(d.nodes);en.className='sv';
+          }
           var rv=d.rps||0;
           document.getElementById('rps').textContent=rv.toFixed(3)+'/s';
           buf.push(rv);buf.shift();drawSpark();
           document.getElementById('h5').textContent=Math.round(d.hits5m||0);
           document.getElementById('h1').textContent=Math.round(d.hits1h||0);
-          if(d.pods!=null) document.getElementById('n-p').textContent=Math.round(d.pods);
-          if(d.nodes!=null) document.getElementById('n-n').textContent=Math.round(d.nodes);
-          if(d.ns!=null)   document.getElementById('n-s').textContent=Math.round(d.ns);
           renderPods(d.pod_list);
           if(d.snow){
             var pc=d.snow.priority_counts||{};
@@ -454,6 +454,8 @@ data:
               var el=document.getElementById('sn-p'+p);
               if(el) el.textContent=(pc['p'+p]!=null?pc['p'+p]:'0');
             });
+            document.getElementById('sc-p1').textContent=pc['p1']||0;
+            document.getElementById('sc-p2').textContent=pc['p2']||0;
             var incs=d.snow.recent||[];
             document.getElementById('sn-inc').innerHTML=incs.length
               ?incs.map(function(r){
