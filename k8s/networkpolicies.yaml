@@ -107,6 +107,8 @@ spec:
     ports:
     - port: 9090
       protocol: TCP
+    - port: 3100
+      protocol: TCP
   - ports:
     - port: 443
       protocol: TCP

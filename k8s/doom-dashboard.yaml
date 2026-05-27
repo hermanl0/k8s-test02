@@ -52,7 +52,7 @@ metadata:
 data:
   metrics_server.py: |
     #!/usr/bin/env python3
-    import json, time, threading, urllib.request, urllib.parse, os, base64
+    import json, re, time, threading, urllib.request, urllib.parse, os, base64
     from http.server import BaseHTTPRequestHandler, HTTPServer
 
     PROM      = "http://kube-prometheus-stack-prometheus.monitoring:9090/api/v1/query"
@@ -72,6 +72,57 @@ data:
     }
     INGRESS_Q = 'sort_desc(sum by (ingress)(rate(nginx_ingress_controller_requests[2m])))'
     PODS_Q    = 'kube_pod_status_phase == 1'
+    LOKI      = "http://loki-stack.monitoring:3100"
+
+    IP_RE    = re.compile(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b')
+    SKIP_IPS = {'168.63.129.16'}  # Azure LB health probe
+    GEO_CACHE = {}  # ip -> {city, country, country_code}
+
+    def _is_public(ip):
+        if ip in SKIP_IPS:
+            return False
+        return not re.match(r'^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|127\.|100\.)', ip)
+
+    def _geolocate(ip):
+        if ip in GEO_CACHE:
+            return GEO_CACHE[ip]
+        try:
+            req = urllib.request.Request(
+                f"https://ipapi.co/{ip}/json/",
+                headers={"User-Agent": "doom-dashboard/1.0"})
+            with urllib.request.urlopen(req, timeout=5) as r:
+                d = json.load(r)
+            info = {"city": d.get("city", ""), "country": d.get("country_name", ""),
+                    "country_code": (d.get("country_code") or "").lower()}
+            GEO_CACHE[ip] = info
+            return info
+        except Exception:
+            return {"city": "", "country": "", "country_code": ""}
+
+    def _fetch_geo():
+        now_ns   = int(time.time() * 1_000_000_000)
+        start_ns = now_ns - 10 * 60 * 1_000_000_000  # last 10 min
+        params   = urllib.parse.urlencode({
+            "query":     '{namespace="ingress-nginx"}',
+            "limit":     "200",
+            "start":     str(start_ns),
+            "end":       str(now_ns),
+            "direction": "backward",
+        })
+        url = LOKI + "/loki/api/v1/query_range?" + params
+        with urllib.request.urlopen(url, timeout=8) as r:
+            data = json.load(r)
+        seen, seen_set = [], set()
+        for stream in data.get("data", {}).get("result", []):
+            for ts_ns, line in stream.get("values", []):
+                for ip in IP_RE.findall(line):
+                    if ip not in seen_set and _is_public(ip):
+                        seen_set.add(ip)
+                        geo = _geolocate(ip)
+                        seen.append({"ip": ip, "ts": int(ts_ns) // 1_000_000_000, **geo})
+                        if len(seen) >= 5:
+                            return seen
+        return seen
 
     # Alert rules evaluated every 60s. Scalar rules fire when the single
     # returned value exceeds threshold. Vector rules fire once per result row.
@@ -265,9 +316,10 @@ data:
 
     _snow_tick  = 0
     _snow_cache = {}
+    _geo_cache  = []
 
     def _loop():
-        global _snow_tick, _snow_cache
+        global _snow_tick, _snow_cache, _geo_cache
         while True:
             try:
                 data = _fetch()
@@ -283,9 +335,15 @@ data:
                             _snow_cache.update(s)
                     except Exception as e:
                         print(f"[snow] fetch: {e}", flush=True)
+                    try:
+                        _geo_cache[:] = _fetch_geo()
+                    except Exception as e:
+                        print(f"[geo] fetch: {e}", flush=True)
                 _snow_tick += 1
                 if _snow_cache:
                     data['snow'] = dict(_snow_cache)
+                if _geo_cache:
+                    data['geo'] = list(_geo_cache)
                 with _lock:
                     _cache.clear()
                     _cache.update(data)
@@ -400,6 +458,10 @@ data:
         .irow{display:flex;justify-content:space-between;margin-bottom:6px;font-size:14px}
         .iname{color:var(--dim);flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
         .irps{color:var(--amb);margin-left:10px;flex-shrink:0}
+        .geo-row{display:flex;align-items:center;gap:6px;margin-bottom:5px}
+        .geo-flag{font-size:14px;flex-shrink:0;width:20px;text-align:center}
+        .geo-ip{font-size:11px;color:var(--dim);flex-shrink:0;width:108px;font-variant-numeric:tabular-nums}
+        .geo-loc{font-size:12px;color:var(--tx);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
         #pod-sec{padding:12px 14px;flex:1;overflow-y:auto;min-height:0;border-bottom:1px solid var(--bdr)}
         .pgrp{margin-bottom:10px}
         .pgrp-hd{
@@ -478,6 +540,10 @@ data:
           </div>
           <div id="sn-inc"><div class="inc-row"><span class="inc-desc" style="color:#333">loading&hellip;</span></div></div>
         </div>
+        <div class="sec">
+          <div class="sec-hd">&#127757; recent visitors</div>
+          <div id="geo-list"><div class="geo-row"><span class="geo-loc" style="color:#333">loading&hellip;</span></div></div>
+        </div>
         <div id="pod-sec">
           <div class="sec-hd" style="margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--bdr)">&#128187; pod roster</div>
           <div id="pods"><div class="prow"><span class="pname" style="color:#333">loading&hellip;</span></div></div>
@@ -496,6 +562,13 @@ data:
         'kube-system':  '#484848'
       };
       function nsColor(ns){ return NS_COL[ns]||'#606060'; }
+
+      function flagEmoji(cc){
+        if(!cc||cc.length!==2) return '🌐';
+        return String.fromCodePoint(
+          cc.toUpperCase().charCodeAt(0)+127397,
+          cc.toUpperCase().charCodeAt(1)+127397);
+      }
 
       function shortPod(n){
         var m;
@@ -575,6 +648,18 @@ data:
           document.getElementById('h5').textContent=Math.round(d.hits5m||0);
           document.getElementById('h1').textContent=Math.round(d.hits1h||0);
           renderPods(d.pod_list);
+          if(d.geo&&d.geo.length){
+            document.getElementById('geo-list').innerHTML=d.geo.map(function(g){
+              var loc=[g.city,g.country].filter(Boolean).join(', ')||'—';
+              return '<div class="geo-row">'+
+                '<span class="geo-flag">'+flagEmoji(g.country_code)+'</span>'+
+                '<span class="geo-ip">'+g.ip+'</span>'+
+                '<span class="geo-loc">'+loc+'</span></div>';
+            }).join('');
+          } else if(d.geo){
+            document.getElementById('geo-list').innerHTML=
+              '<div class="geo-row"><span class="geo-loc" style="color:#555">no visitors yet</span></div>';
+          }
           if(d.snow){
             var pc=d.snow.priority_counts||{};
             ['1','2','3','4'].forEach(function(p){
