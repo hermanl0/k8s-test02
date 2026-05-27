@@ -137,30 +137,35 @@ data:
 
     # Alert rules evaluated every 60s. Scalar rules fire when the single
     # returned value exceeds threshold. Vector rules fire once per result row.
+    # impact/urgency drive ServiceNow priority: 1+1→P1, 2+1→P2.
     ALERT_RULES = [
         {
-            "key": "node-cpu-high", "scalar": True, "priority": "1",
+            "key": "node-cpu-high", "scalar": True,
+            "impact": "1", "urgency": "1",
             "query":     '(1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m]))) * 100',
             "threshold": 90,
             "title_tpl": "AKS lab-aks: cluster CPU critical ({val:.0f}%)",
             "desc_tpl":  "Cluster-average CPU has exceeded 90% sustained over 5 minutes (current: {val:.1f}%). Risk of throttling and latency spikes across all workloads.",
         },
         {
-            "key": "node-mem-high", "scalar": True, "priority": "1",
+            "key": "node-mem-high", "scalar": True,
+            "impact": "1", "urgency": "1",
             "query":     '(1 - avg(node_memory_MemAvailable_bytes/node_memory_MemTotal_bytes)) * 100',
             "threshold": 90,
             "title_tpl": "AKS lab-aks: cluster memory critical ({val:.0f}%)",
             "desc_tpl":  "Cluster-average memory has exceeded 90% sustained over 5 minutes (current: {val:.1f}%). Risk of OOMKill events and pod eviction.",
         },
         {
-            "key": "pod-restart", "scalar": False, "priority": "2",
+            "key": "pod-restart", "scalar": False,
+            "impact": "2", "urgency": "1",
             "query":     'sort_desc(increase(kube_pod_container_status_restarts_total{container!="",namespace=~"lab|monitoring|ingress-nginx|cert-manager"}[1h])) > 2',
             "key_sfx":   "{ns}-{pod}",
             "title_tpl": "Pod restart loop detected: {ns}/{pod}",
             "desc_tpl":  "Pod {pod} in namespace {ns} has restarted {val:.0f} times in the past hour. Possible CrashLoopBackOff or OOMKill. Immediate investigation recommended.",
         },
         {
-            "key": "pod-not-running", "scalar": False, "priority": "2",
+            "key": "pod-not-running", "scalar": False,
+            "impact": "2", "urgency": "1",
             "query":     'kube_pod_status_phase{phase=~"Pending|Failed",namespace=~"lab|monitoring|ingress-nginx|cert-manager"} == 1',
             "key_sfx":   "{ns}-{pod}-{phase}",
             "title_tpl": "Pod stuck in {phase}: {ns}/{pod}",
@@ -223,8 +228,9 @@ data:
             return None
         creds = base64.b64encode(f"{SNOW_USER}:{SNOW_PASS}".encode()).decode()
         hdrs  = {"Authorization": f"Basic {creds}", "Accept": "application/json"}
+        base_q = _SNOW_OPEN_Q
         stats_url = (SNOW_URL + "/api/now/stats/incident"
-                     "?sysparm_query=active%3Dtrue"
+                     "?sysparm_query=" + base_q +
                      "&sysparm_group_by=priority&sysparm_count=true")
         req = urllib.request.Request(stats_url, headers=hdrs)
         with urllib.request.urlopen(req, timeout=8) as r:
@@ -235,8 +241,8 @@ data:
             counts[f"p{p}"] = int(item['stats']['count'])
         inc_url = (SNOW_URL + "/api/now/table/incident"
                    "?sysparm_limit=4"
-                   "&sysparm_fields=number,short_description,priority"
-                   "&sysparm_query=active%3Dtrue%5Epriority%3C%3D2%5EORDERBYpriority")
+                   "&sysparm_fields=number,short_description,priority,correlation_id"
+                   "&sysparm_query=" + base_q + "%5Epriority%3C%3D2%5EORDERBYpriority")
         req = urllib.request.Request(inc_url, headers=hdrs)
         with urllib.request.urlopen(req, timeout=8) as r:
             incs = json.load(r)
@@ -251,6 +257,7 @@ data:
         for rule in ALERT_RULES:
             try:
                 results = _query(rule["query"])
+                impact, urgency = rule["impact"], rule["urgency"]
                 if rule["scalar"]:
                     if not results:
                         continue
@@ -260,7 +267,7 @@ data:
                     key   = rule["key"]
                     title = rule["title_tpl"].format(val=val)
                     desc  = rule["desc_tpl"].format(val=val)
-                    firing[key] = (rule["priority"], title, desc)
+                    firing[key] = (impact, urgency, title, desc)
                 else:
                     for r in results:
                         m     = r["metric"]
@@ -272,7 +279,7 @@ data:
                         key   = f"{rule['key']}-{sfx}"
                         title = rule["title_tpl"].format(ns=ns, pod=pod, phase=phase, val=val)
                         desc  = rule["desc_tpl"].format(ns=ns, pod=pod, phase=phase, val=val)
-                        firing[key] = (rule["priority"], title, desc)
+                        firing[key] = (impact, urgency, title, desc)
             except Exception as e:
                 print(f"[snow] alert eval ({rule['key']}): {e}", flush=True)
         return firing
@@ -296,55 +303,54 @@ data:
             for name, status in status_map.items()
         ]
 
+    # Open incidents: state IN (1=New, 2=In Progress, 3=On Hold).
+    # Resolved (6) and Closed (7) are excluded — active flag stays true at state=6.
+    _SNOW_OPEN_Q = "correlation_idSTARTSWITHk8s-lab%3A%5EstateIN1%2C2%2C3"
+
     def _sync_snow():
         if not (SNOW_URL and SNOW_USER and SNOW_PASS):
             return
         firing = _eval_alerts()
+        # Query SNOW as source of truth — survives pod restarts
+        resp = _snow_req("GET", f"/api/now/table/incident?sysparm_query={_SNOW_OPEN_Q}"
+                                f"&sysparm_fields=sys_id,number,correlation_id&sysparm_limit=50")
+        open_in_snow = {
+            i["correlation_id"][len("k8s-lab:"):]: i["sys_id"]
+            for i in resp.get("result", [])
+        }
         with _olock:
-            open_copy = dict(_open)
-        # Open incidents for newly firing alerts
-        for key, (priority, title, desc) in firing.items():
-            if key in open_copy:
+            _open.clear()
+            _open.update(open_in_snow)
+        # Create incidents for newly-firing alerts not yet open in SNOW
+        for key, (impact, urgency, title, desc) in firing.items():
+            if key in open_in_snow:
                 continue
             corr = f"k8s-lab:{key}"
             try:
-                q    = urllib.parse.quote(f"correlation_id={corr}^active=true")
-                resp = _snow_req("GET", f"/api/now/table/incident?sysparm_query={q}"
-                                        f"&sysparm_fields=sys_id,number&sysparm_limit=1")
-                existing = resp.get("result", [])
-                if existing:
-                    sys_id = existing[0]["sys_id"]
-                else:
-                    r2 = _snow_req("POST", "/api/now/table/incident", {
-                        "short_description": title[:160],
-                        "description":       desc,
-                        "priority":          priority,
-                        "correlation_id":    corr,
-                        "category":          "infrastructure",
-                    })
-                    sys_id = r2["result"]["sys_id"]
-                    print(f"[snow] opened {r2['result']['number']} — {title[:60]}", flush=True)
-                with _olock:
-                    _open[key] = sys_id
+                r2 = _snow_req("POST", "/api/now/table/incident", {
+                    "short_description": title[:160],
+                    "description":       desc,
+                    "impact":            impact,
+                    "urgency":           urgency,
+                    "correlation_id":    corr,
+                    "category":          "infrastructure",
+                })
+                print(f"[snow] opened {r2['result']['number']} — {title[:60]}", flush=True)
             except Exception as e:
                 print(f"[snow] create ({key}): {e}", flush=True)
-        # Resolve incidents whose condition has cleared
-        for key, sys_id in list(open_copy.items()):
+        # Resolve SNOW incidents whose alert condition has cleared
+        for key, sys_id in list(open_in_snow.items()):
             if key in firing:
                 continue
             try:
                 _snow_req("PATCH", f"/api/now/table/incident/{sys_id}", {
-                    "state":            "4",
-                    "active":           "false",
-                    "close_code":       "Solved (Permanently)",
-                    "close_notes":      "Condition cleared automatically by cluster monitoring.",
-                    "work_notes":       "Alert condition resolved; no further action required.",
+                    "state":       "6",
+                    "close_code":  "Solution provided",
+                    "close_notes": "Condition cleared automatically by cluster monitoring.",
                 })
                 print(f"[snow] resolved {sys_id} ({key})", flush=True)
             except Exception as e:
                 print(f"[snow] resolve ({key}): {e}", flush=True)
-            with _olock:
-                _open.pop(key, None)
 
     _snow_tick    = 0
     _snow_cache   = {}
