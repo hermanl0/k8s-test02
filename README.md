@@ -1,127 +1,88 @@
 # k8s-test02 — hl0.dev lab
 
-Personal Kubernetes lab running on Azure Kubernetes Service.
+> *You are the Kubernetes administrator. The demons are the microservices. Good luck.*
 
-## Cluster
+Personal Kubernetes lab on Azure — live at **[doom.hl0.dev](https://doom.hl0.dev)**.
 
-| | |
-|---|---|
-| **Platform** | Azure Kubernetes Service (AKS), Free SKU tier |
-| **Region** | West Europe (Amsterdam) |
-| **Node pool** | 2 × Standard_D2s_v6 — 2 vCPU / 8 GB each |
-| **OS** | Ubuntu 22.04 LTS |
+![Doom Dashboard](https://hermanl0.github.io/img/doom-dashboard.png)
 
-**Live endpoints**
+---
 
-| URL | Service |
-|-----|---------|
-| [doom.hl0.dev](https://doom.hl0.dev) | DOOM ops dashboard (game + live cluster metrics + ServiceNow) |
-| [grafana.hl0.dev](https://grafana.hl0.dev) | Grafana — Prometheus + Loki datasources |
-| [test02.hl0.dev](https://test02.hl0.dev) | nginx |
+## The Arsenal
+
+| Weapon | What it does |
+|--------|--------------|
+| **AKS** (2 × Standard_D2s_v6) | Runs the cluster |
+| **NGINX Gateway Fabric** | Gateway API ingress — HTTP→HTTPS redirect, TLS termination |
+| **cert-manager** | Automatic Let's Encrypt TLS via Cloudflare DNS-01 |
+| **kube-prometheus-stack** | Prometheus + Grafana + Alertmanager |
+| **Loki + Promtail** | Log aggregation |
+| **Uptime Kuma** | Public status page |
+| **Doom dashboard** | Flask app — live cluster metrics + ServiceNow incidents |
+
+---
+
+## Live Endpoints
+
+| URL | What's there |
+|-----|-------------|
+| [doom.hl0.dev](https://doom.hl0.dev) | The dashboard |
+| [grafana.hl0.dev](https://grafana.hl0.dev) | Grafana |
 | [status.hl0.dev](https://status.hl0.dev) | Uptime Kuma |
+| [test02.hl0.dev](https://test02.hl0.dev) | nginx |
 
 ---
 
-## Workloads
+## Observability
 
-### Namespace: `lab`
+![Grafana](https://hermanl0.github.io/img/k8s-test02-grafana.png)
 
-| Deployment | Image | Replicas | Exposed at |
-|---|---|---|---|
-| nginx | nginx:1.27-alpine | 2 | test02.hl0.dev |
-| mariadb | mariadb:10.11 | 1 | ClusterIP only |
-| doom | scottlawsonbc/doom-wasm | 1 | via doom-dashboard proxy |
-| doom-dashboard | nginxinc/nginx-unprivileged:1.27-alpine + python:3.12-alpine | 1 | doom.hl0.dev |
-| uptimekuma | louislam/uptime-kuma:1 | 1 | status.hl0.dev |
-
-### Namespace: `monitoring`
-
-| Component | Source | Role |
-|---|---|---|
-| Prometheus | kube-prometheus-stack | Metrics — 7-day retention, 5 Gi PVC |
-| Grafana | kube-prometheus-stack | Dashboards — Prometheus + Loki datasources |
-| node-exporter | kube-prometheus-stack | Host-level CPU / memory / disk metrics |
-| kube-state-metrics | kube-prometheus-stack | Kubernetes object state metrics |
-| Loki | loki-stack | Log aggregation |
-| Promtail | loki-stack | Log shipping (DaemonSet on every node) |
-
-### Supporting namespaces
-
-| Namespace | Component | Role |
-|---|---|---|
-| ingress-nginx | ingress-nginx controller | Azure LoadBalancer → TLS termination → pod routing |
-| cert-manager | cert-manager | Automated Let's Encrypt TLS via Cloudflare DNS-01 |
+Prometheus scrapes everything — nodes, pods, and NGF request metrics via `ServiceMonitor`. Loki + Promtail handles logs. All wired into Grafana.
 
 ---
 
-## CI/CD
+## Status
 
-Every push to `main` that touches `k8s/**` or `.github/workflows/deploy.yml` triggers the **Deploy to AKS** workflow automatically. A manual run can be started from the Actions tab (`workflow_dispatch`).
+![Uptime Kuma](https://hermanl0.github.io/img/k8s-test02-uptimekuma.png)
 
-| Stage | What it does |
-|-------|-------------|
-| Validate | YAML syntax check on all manifests; Gitleaks secret scan |
-| Deploy | Azure login → `kubectl apply` all manifests → Helm upgrade (kube-prometheus-stack, loki-stack, cert-manager, ingress-nginx) |
-| DNS | Reads the ingress-nginx LoadBalancer IP and upserts A records for all four subdomains via Cloudflare API |
-| Verify | `kubectl rollout status` on each deployment to confirm healthy rollout |
-
-**GitHub Actions secrets required**
-
-| Secret | Used for |
-|--------|---------|
-| `AZURE_CREDENTIALS` | Service principal login to AKS |
-| `GH_PAT` | Checkout |
-| `CLOUDFLARE_API_TOKEN` | DNS record upsert |
-| `GRAFANA_ADMIN_PASSWORD` | Grafana admin Kubernetes Secret |
-| `SNOW_PASS` | ServiceNow credentials Kubernetes Secret |
-| `UPTIME_KUMA_API_KEY` | Uptime Kuma API key Kubernetes Secret |
-
-Typical deploy time: **3–4 minutes** from push to running pods.
+Public status page at [status.hl0.dev](https://status.hl0.dev) — monitors all four endpoints.
 
 ---
 
 ## Security
 
-| Layer | Implementation |
-|-------|----------------|
-| TLS | cert-manager + Let's Encrypt DNS-01 (Cloudflare), HSTS on all endpoints |
-| Network | Default-deny `NetworkPolicy` in `lab`; per-workload ingress/egress allow rules |
-| Containers | `runAsNonRoot`, `readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`, `seccompProfile: RuntimeDefault` |
-| Secrets | Kubernetes Secrets for all credentials; GitHub Actions secrets for CI |
-| Ingress | `allowSnippetAnnotations: false` (ingress-nginx safe default) |
+- **NetworkPolicies**: default-deny in `lab` namespace; per-pod allow rules
+- **Rate limiting**: NGF `SnippetsFilter` — 20 req/s per IP, burst 60, 429 on excess
+- **Security headers**: HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy on all routes
+- **TLS**: cert-manager + Let's Encrypt, HSTS preload
 
 ---
 
-## Storage
+## CI/CD
 
-| PVC | Namespace | Size | Consumer |
-|-----|-----------|------|----------|
-| mariadb-data | lab | 5 Gi | MariaDB |
-| uptimekuma-data | lab | 1 Gi | Uptime Kuma |
-| grafana | monitoring | 2 Gi | Grafana |
-| prometheus-db | monitoring | 5 Gi | Prometheus |
+Push to `main` → GitHub Actions → validate YAML + secret scan → helm upgrades → `kubectl apply` → Cloudflare DNS upsert → rollout verify. About **3–4 minutes** end to end.
+
+**Secrets needed:** `AZURE_CREDENTIALS`, `GH_PAT`, `CLOUDFLARE_API_TOKEN`, `GRAFANA_ADMIN_PASSWORD`, `SNOW_PASS`, `UPTIME_KUMA_API_KEY`
 
 ---
 
-## Key commands
+## Key Commands
 
 ```bash
-# Get cluster credentials
+# Credentials
 az aks get-credentials --resource-group lab-rg --name lab-aks
 
-# Check everything
-kubectl get pods,svc,pvc,ingress -n lab
+# Cluster overview
+kubectl get pods,svc,pvc -n lab
 kubectl get pods -n monitoring
+kubectl get gateway,httproute -A
 
-# Certificate status
+# Cert status
 kubectl get certificate -A
 
-# Tail doom-dashboard metrics sidecar logs (Prometheus + SNOW + geo)
-kubectl logs -n lab deployment/doom-dashboard -c metrics -f
+# Doom dashboard logs
+kubectl logs -n lab deployment/doom-dashboard -f
 
-# Force-reload ConfigMap changes in doom-dashboard
+# Restart doom-dashboard
 kubectl rollout restart deployment/doom-dashboard -n lab
-
-# Scale nginx
-kubectl scale deployment nginx -n lab --replicas=3
 ```
