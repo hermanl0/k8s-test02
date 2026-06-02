@@ -363,7 +363,7 @@ data:
           ]
         },
         {
-          "datasource": {"type": "loki", "uid": "loki"},
+          "datasource": {"type": "loki", "uid": "P8E80F9AEF21F6940"},
           "fieldConfig": {"defaults": {}, "overrides": []},
           "gridPos": {"h": 10, "w": 24, "x": 0, "y": 37},
           "id": 13,
@@ -379,7 +379,7 @@ data:
           },
           "title": "Lab Namespace Logs",
           "type": "logs",
-          "targets": [{"datasource": {"type": "loki", "uid": "loki"}, "expr": "{namespace=\"lab\"}", "refId": "A"}]
+          "targets": [{"datasource": {"type": "loki", "uid": "P8E80F9AEF21F6940"}, "expr": "{namespace=\"lab\"}", "refId": "A"}]
         }
       ],
       "schemaVersion": 38,
