@@ -14,6 +14,20 @@ spec:
       limit_req zone=per_ip burst=60 nodelay;
       limit_req_status 429;
 ---
+# Redirect bare root of grafana.hl0.dev to the public dashboard.
+apiVersion: gateway.nginx.org/v1alpha1
+kind: SnippetsFilter
+metadata:
+  name: grafana-root-redirect
+  namespace: monitoring
+spec:
+  snippets:
+  - context: http.server.location
+    value: |
+      if ($request_uri = /) {
+        return 302 /public-dashboards/17f3540b486f499d8b9d3b5a2d03ff40;
+      }
+---
 # Separate filter for the grafana HTTPRoute which lives in the monitoring namespace.
 apiVersion: gateway.nginx.org/v1alpha1
 kind: SnippetsFilter

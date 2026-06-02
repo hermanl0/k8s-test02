@@ -216,6 +216,11 @@ spec:
         group: gateway.nginx.org
         kind: SnippetsFilter
         name: rate-limit
+    - type: ExtensionRef
+      extensionRef:
+        group: gateway.nginx.org
+        kind: SnippetsFilter
+        name: grafana-root-redirect
     backendRefs:
     - name: kube-prometheus-stack-grafana
       port: 80
