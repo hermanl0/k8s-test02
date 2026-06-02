@@ -31,6 +31,7 @@ grafana:
     url: http://loki-stack:3100
     access: proxy
     isDefault: false
+    uid: loki
   dashboardProviders:
     dashboardproviders.yaml:
       apiVersion: 1

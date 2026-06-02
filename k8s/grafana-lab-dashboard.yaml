@@ -19,7 +19,7 @@ data:
       "links": [],
       "panels": [
         {
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
           "fieldConfig": {
             "defaults": {
               "color": {"mode": "thresholds"},
@@ -41,10 +41,10 @@ data:
           },
           "title": "Running Pods",
           "type": "stat",
-          "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "count(kube_pod_status_phase{phase=\"Running\"})", "legendFormat": "pods", "refId": "A"}]
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "count(kube_pod_status_phase{phase=\"Running\"})", "legendFormat": "pods", "refId": "A"}]
         },
         {
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
           "fieldConfig": {
             "defaults": {
               "color": {"mode": "thresholds"},
@@ -66,10 +66,10 @@ data:
           },
           "title": "Nodes",
           "type": "stat",
-          "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "count(kube_node_info)", "legendFormat": "nodes", "refId": "A"}]
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "count(kube_node_info)", "legendFormat": "nodes", "refId": "A"}]
         },
         {
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
           "fieldConfig": {
             "defaults": {
               "color": {"mode": "thresholds"},
@@ -95,10 +95,10 @@ data:
           },
           "title": "Cluster CPU",
           "type": "stat",
-          "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "avg(1 - avg by(instance)(rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))) * 100", "legendFormat": "cpu", "refId": "A"}]
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "avg(1 - avg by(instance)(rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))) * 100", "legendFormat": "cpu", "refId": "A"}]
         },
         {
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
           "fieldConfig": {
             "defaults": {
               "color": {"mode": "thresholds"},
@@ -124,10 +124,10 @@ data:
           },
           "title": "Cluster Memory",
           "type": "stat",
-          "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "avg(1 - (node_memory_MemAvailable_bytes/node_memory_MemTotal_bytes)) * 100", "legendFormat": "memory", "refId": "A"}]
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "avg(1 - (node_memory_MemAvailable_bytes/node_memory_MemTotal_bytes)) * 100", "legendFormat": "memory", "refId": "A"}]
         },
         {
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
           "fieldConfig": {
             "defaults": {
               "color": {"mode": "palette-classic"},
@@ -154,10 +154,10 @@ data:
           },
           "title": "HTTP Requests / s",
           "type": "timeseries",
-          "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum by(ingress) (rate(nginx_ingress_controller_requests[5m]))", "legendFormat": "{{ingress}}", "refId": "A"}]
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum by(ingress) (rate(nginx_ingress_controller_requests[5m]))", "legendFormat": "{{ingress}}", "refId": "A"}]
         },
         {
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
           "fieldConfig": {
             "defaults": {
               "color": {"mode": "palette-classic"},
@@ -186,13 +186,13 @@ data:
           "title": "HTTP Status Codes",
           "type": "timeseries",
           "targets": [
-            {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(rate(nginx_ingress_controller_requests{status=~\"2..\"}[5m]))", "legendFormat": "2xx", "refId": "A"},
-            {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(rate(nginx_ingress_controller_requests{status=~\"4..\"}[5m]))", "legendFormat": "4xx", "refId": "B"},
-            {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(rate(nginx_ingress_controller_requests{status=~\"5..\"}[5m]))", "legendFormat": "5xx", "refId": "C"}
+            {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(rate(nginx_ingress_controller_requests{status=~\"2..\"}[5m]))", "legendFormat": "2xx", "refId": "A"},
+            {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(rate(nginx_ingress_controller_requests{status=~\"4..\"}[5m]))", "legendFormat": "4xx", "refId": "B"},
+            {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(rate(nginx_ingress_controller_requests{status=~\"5..\"}[5m]))", "legendFormat": "5xx", "refId": "C"}
           ]
         },
         {
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
           "fieldConfig": {
             "defaults": {
               "color": {"mode": "palette-classic"},
@@ -217,10 +217,10 @@ data:
           },
           "title": "p99 Response Latency",
           "type": "timeseries",
-          "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "histogram_quantile(0.99, sum by(le, ingress) (rate(nginx_ingress_controller_response_duration_seconds_bucket[5m])))", "legendFormat": "{{ingress}} p99", "refId": "A"}]
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "histogram_quantile(0.99, sum by(le, ingress) (rate(nginx_ingress_controller_response_duration_seconds_bucket[5m])))", "legendFormat": "{{ingress}} p99", "refId": "A"}]
         },
         {
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
           "fieldConfig": {
             "defaults": {
               "color": {"mode": "palette-classic"},
@@ -245,10 +245,10 @@ data:
           },
           "title": "Lab — CPU Cores Used",
           "type": "timeseries",
-          "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{namespace=\"lab\",container!=\"POD\",container!=\"\"}[5m]))", "legendFormat": "{{pod}}", "refId": "A"}]
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{namespace=\"lab\",container!=\"POD\",container!=\"\"}[5m]))", "legendFormat": "{{pod}}", "refId": "A"}]
         },
         {
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
           "fieldConfig": {
             "defaults": {
               "color": {"mode": "palette-classic"},
@@ -273,10 +273,10 @@ data:
           },
           "title": "Lab — Memory (Working Set)",
           "type": "timeseries",
-          "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum by(pod) (container_memory_working_set_bytes{namespace=\"lab\",container!=\"POD\",container!=\"\"})", "legendFormat": "{{pod}}", "refId": "A"}]
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum by(pod) (container_memory_working_set_bytes{namespace=\"lab\",container!=\"POD\",container!=\"\"})", "legendFormat": "{{pod}}", "refId": "A"}]
         },
         {
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
           "fieldConfig": {
             "defaults": {
               "color": {"mode": "palette-classic"},
@@ -303,10 +303,10 @@ data:
           },
           "title": "Node CPU Usage",
           "type": "timeseries",
-          "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "1 - avg by(instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))", "legendFormat": "{{instance}}", "refId": "A"}]
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "1 - avg by(instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))", "legendFormat": "{{instance}}", "refId": "A"}]
         },
         {
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
           "fieldConfig": {
             "defaults": {
               "color": {"mode": "palette-classic"},
@@ -333,10 +333,10 @@ data:
           },
           "title": "Node Memory Usage",
           "type": "timeseries",
-          "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "1 - (node_memory_MemAvailable_bytes/node_memory_MemTotal_bytes)", "legendFormat": "{{instance}}", "refId": "A"}]
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "1 - (node_memory_MemAvailable_bytes/node_memory_MemTotal_bytes)", "legendFormat": "{{instance}}", "refId": "A"}]
         },
         {
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
           "fieldConfig": {
             "defaults": {
               "color": {"mode": "thresholds"},
@@ -357,13 +357,13 @@ data:
           "options": {"footer": {"show": false}, "showHeader": true, "sortBy": [{"desc": true, "displayName": "Restarts"}]},
           "title": "Pod Restarts — last 24h",
           "type": "table",
-          "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sort_desc(sum by(namespace,pod) (increase(kube_pod_container_status_restarts_total[24h]))) > 0", "legendFormat": "", "refId": "A", "instant": true, "format": "table"}],
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sort_desc(sum by(namespace,pod) (increase(kube_pod_container_status_restarts_total[24h]))) > 0", "legendFormat": "", "refId": "A", "instant": true, "format": "table"}],
           "transformations": [
             {"id": "organize", "options": {"excludeByName": {"Time": true}, "renameByName": {"Value #A": "Restarts", "namespace": "Namespace", "pod": "Pod"}}}
           ]
         },
         {
-          "datasource": {"type": "loki", "uid": "${loki_ds}"},
+          "datasource": {"type": "loki", "uid": "loki"},
           "fieldConfig": {"defaults": {}, "overrides": []},
           "gridPos": {"h": 10, "w": 24, "x": 0, "y": 37},
           "id": 13,
@@ -379,7 +379,7 @@ data:
           },
           "title": "Lab Namespace Logs",
           "type": "logs",
-          "targets": [{"datasource": {"type": "loki", "uid": "${loki_ds}"}, "expr": "{namespace=\"lab\"}", "refId": "A"}]
+          "targets": [{"datasource": {"type": "loki", "uid": "loki"}, "expr": "{namespace=\"lab\"}", "refId": "A"}]
         }
       ],
       "schemaVersion": 38,
