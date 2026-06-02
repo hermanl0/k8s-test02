@@ -63,6 +63,84 @@ data:
     UK_URL    = "http://uptimekuma.lab:3001"
     UK_KEY    = os.environ.get('UPTIME_KUMA_API_KEY', '')
 
+    # --- PostgreSQL (via the CNPG Pooler) ----------------------------------
+    # Incidents fetched from ServiceNow are persisted here as a local audit log,
+    # then read back for the dashboard's "incident history" panel. The whole path
+    # (write -> pooler -> primary -> replicas -> MinIO backups) is exercised here.
+    _dbhost_raw = os.environ.get('DB_HOST', '')        # "host:port"
+    DB_NAME = os.environ.get('DB_NAME', 'appdb')
+    DB_USER = os.environ.get('DB_USER', '')
+    DB_PASS = os.environ.get('DB_PASS', '')
+    if ':' in _dbhost_raw:
+        DB_HOST, _p = _dbhost_raw.rsplit(':', 1)
+        DB_PORT = int(_p)
+    else:
+        DB_HOST, DB_PORT = _dbhost_raw, 5432
+
+    try:
+        import pg8000.dbapi as _pg
+    except Exception as _e:
+        _pg = None
+        print(f"[db] pg8000 unavailable, DB features disabled: {_e}", flush=True)
+
+    def _db_conn():
+        if not (_pg and DB_HOST and DB_USER and DB_PASS):
+            return None
+        return _pg.connect(host=DB_HOST, port=DB_PORT, database=DB_NAME,
+                           user=DB_USER, password=DB_PASS, timeout=5)
+
+    def _persist_incidents(snow):
+        recent = (snow or {}).get('recent', [])
+        if not recent:
+            return
+        conn = None
+        try:
+            conn = _db_conn()
+            if conn is None:
+                return
+            cur = conn.cursor()
+            for i in recent:
+                cur.execute(
+                    "INSERT INTO incident_log "
+                    "(number, short_description, priority, state, first_seen, last_seen) "
+                    "VALUES (%s, %s, %s, %s, NOW(), NOW()) "
+                    "ON CONFLICT (number) DO UPDATE SET "
+                    "short_description = EXCLUDED.short_description, "
+                    "priority = EXCLUDED.priority, last_seen = NOW()",
+                    (i.get('num'), i.get('desc'), str(i.get('prio', '')), 'open'))
+            conn.commit()
+        except Exception as e:
+            print(f"[db] persist: {e}", flush=True)
+        finally:
+            if conn:
+                try: conn.close()
+                except Exception: pass
+
+    def _fetch_incident_history():
+        conn = None
+        try:
+            conn = _db_conn()
+            if conn is None:
+                return None
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT number, short_description, priority, "
+                "to_char(first_seen, 'MM-DD HH24:MI'), "
+                "to_char(last_seen, 'MM-DD HH24:MI') "
+                "FROM incident_log ORDER BY last_seen DESC LIMIT 8")
+            return [
+                {"num": r[0], "desc": r[1], "prio": str(r[2]),
+                 "first": r[3], "last": r[4]}
+                for r in cur.fetchall()
+            ]
+        except Exception as e:
+            print(f"[db] history: {e}", flush=True)
+            return None
+        finally:
+            if conn:
+                try: conn.close()
+                except Exception: pass
+
     SCALARS = {
         "cpu":    '100 - avg(rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100',
         "mem":    '(1 - avg(node_memory_MemAvailable_bytes)/avg(node_memory_MemTotal_bytes)) * 100',
@@ -459,6 +537,7 @@ data:
     _uptime_cache = []
     _chart_cache  = {}
     _log_cache    = []
+    _inc_hist_cache = []
 
     def _loop():
         global _snow_tick, _snow_cache, _geo_cache, _uptime_cache, _chart_cache, _log_cache
@@ -477,6 +556,13 @@ data:
                             _snow_cache.update(s)
                     except Exception as e:
                         print(f"[snow] fetch: {e}", flush=True)
+                    try:
+                        _persist_incidents(_snow_cache)
+                        h = _fetch_incident_history()
+                        if h is not None:
+                            _inc_hist_cache[:] = h
+                    except Exception as e:
+                        print(f"[db] loop: {e}", flush=True)
                     try:
                         _geo_cache[:] = _fetch_geo()
                     except Exception as e:
@@ -506,6 +592,8 @@ data:
                     data['chart'] = dict(_chart_cache)
                 if _log_cache is not None:
                     data['logs'] = list(_log_cache)
+                if _inc_hist_cache:
+                    data['incident_history'] = list(_inc_hist_cache)
                 with _lock:
                     _cache.clear()
                     _cache.update(data)
@@ -754,6 +842,10 @@ data:
           <div id="sn-inc"><div class="inc-row"><span class="inc-desc" style="color:#333">loading&hellip;</span></div></div>
         </div>
         <div class="sec">
+          <div class="sec-hd">&#128190; incident history &middot; postgres</div>
+          <div id="inc-hist"><div class="inc-row"><span class="inc-desc" style="color:#333">loading&hellip;</span></div></div>
+        </div>
+        <div class="sec">
           <div class="sec-hd">&#127757; visitor countries</div>
           <div id="geo-list"><div class="geo-row"><span class="geo-loc" style="color:#333">loading&hellip;</span></div></div>
         </div>
@@ -976,6 +1068,19 @@ data:
                 }).join('')
               :'<div class="inc-row"><span class="inc-desc" style="color:#555">no open incidents</span></div>';
           }
+          if(d.incident_history!=null){
+            var hist=d.incident_history||[];
+            document.getElementById('inc-hist').innerHTML=hist.length
+              ?hist.map(function(r){
+                  var pc='p'+(r.prio<=4?r.prio:4);
+                  return '<div class="inc-row"><div style="display:flex;align-items:center;gap:6px;flex:1;min-width:0">'+
+                    '<span class="inc-badge '+pc+'">P'+r.prio+'</span>'+
+                    '<span class="inc-num">'+r.num+'</span>'+
+                    '<span class="inc-desc">'+r.desc+'</span>'+
+                    '<span style="font-size:10px;color:var(--dim);white-space:nowrap;margin-left:auto">'+r.last+'</span></div></div>';
+                }).join('')
+              :'<div class="inc-row"><span class="inc-desc" style="color:#555">no history yet</span></div>';
+          }
           if(d.chart){ lastChart = d.chart; drawChart(d.chart); }
           if(d.logs!=null){
             document.getElementById('log-list').innerHTML=d.logs.length
@@ -1059,12 +1164,34 @@ spec:
           mountPath: /tmp
       - name: metrics
         image: python:3.12-alpine
-        command: ["python3", "/app/metrics_server.py"]
+        # pg8000 (pure-Python, SCRAM-capable PG driver) is installed at startup
+        # into an emptyDir so the read-only rootfs is preserved. Uses ';' so the
+        # server still starts if PyPI is unreachable — DB features degrade gracefully.
+        command:
+        - sh
+        - -c
+        - 'pip install --no-cache-dir --target=/deps "pg8000==1.31.2" 2>/dev/null || true; exec python3 /app/metrics_server.py'
         env:
         - name: PYTHONDONTWRITEBYTECODE
           value: "1"
         - name: PYTHONUNBUFFERED
           value: "1"
+        - name: PYTHONPATH
+          value: "/deps"
+        - name: TMPDIR
+          value: "/tmp"
+        - name: HOME
+          value: "/tmp"
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-app
+              key: username
+        - name: DB_PASS
+          valueFrom:
+            secretKeyRef:
+              name: postgres-app
+              key: password
         - name: SNOW_URL
           valueFrom:
             secretKeyRef:
@@ -1107,7 +1234,15 @@ spec:
         - name: metrics-script
           mountPath: /app
           readOnly: true
+        - name: deps
+          mountPath: /deps
+        - name: metrics-tmp
+          mountPath: /tmp
       volumes:
+      - name: deps
+        emptyDir: {}
+      - name: metrics-tmp
+        emptyDir: {}
       - name: nginx-config
         configMap:
           name: doom-dashboard-nginx

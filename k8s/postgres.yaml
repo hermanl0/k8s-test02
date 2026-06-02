@@ -16,6 +16,11 @@ spec:
     initdb:
       database: appdb
       owner: appuser
+      # Apply the application schema right after the database is created.
+      postInitApplicationSQLRefs:
+        configMapRefs:
+        - name: postgres-schema
+          key: schema.sql
 
   backup:
     barmanObjectStore:
@@ -53,11 +58,15 @@ metadata:
   namespace: lab
 data:
   schema.sql: |
+    -- Incident audit log. The doom dashboard upserts ServiceNow incidents here
+    -- (keyed on incident number) so PostgreSQL is the local system of record:
+    -- first_seen / last_seen track when each incident was observed.
     CREATE TABLE IF NOT EXISTS incident_log (
-      id SERIAL PRIMARY KEY,
-      recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      number TEXT NOT NULL,
+      number TEXT PRIMARY KEY,
       short_description TEXT,
       priority TEXT,
-      state TEXT
+      state TEXT,
+      first_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_seen TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    GRANT SELECT, INSERT, UPDATE, DELETE ON incident_log TO appuser;
