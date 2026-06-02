@@ -57,6 +57,10 @@ grafana:
         gnetId: 15757
         revision: 37
         datasource: Prometheus
+      cnpg-dashboard:
+        gnetId: 20417
+        revision: 1
+        datasource: Prometheus
 
 prometheus:
   prometheusSpec:

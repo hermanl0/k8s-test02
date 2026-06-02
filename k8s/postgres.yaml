@@ -1,0 +1,63 @@
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres
+  namespace: lab
+spec:
+  instances: 3
+  imageName: ghcr.io/cloudnative-pg/postgresql:16
+
+  storage:
+    size: 5Gi
+    storageClass: managed-csi
+
+  bootstrap:
+    initdb:
+      database: appdb
+      owner: appuser
+
+  backup:
+    barmanObjectStore:
+      endpointURL: http://minio.lab.svc.cluster.local:9000
+      destinationPath: s3://postgres-backups/
+      s3Credentials:
+        accessKeyId:
+          name: minio-credentials
+          key: access-key
+        secretAccessKey:
+          name: minio-credentials
+          key: secret-key
+      wal:
+        compression: gzip
+      data:
+        compression: gzip
+
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: postgres-backup
+  namespace: lab
+spec:
+  schedule: "0 2 * * *"
+  cluster:
+    name: postgres
+  backupOwnerReference: self
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-schema
+  namespace: lab
+data:
+  schema.sql: |
+    CREATE TABLE IF NOT EXISTS incident_log (
+      id SERIAL PRIMARY KEY,
+      recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      number TEXT NOT NULL,
+      short_description TEXT,
+      priority TEXT,
+      state TEXT
+    );

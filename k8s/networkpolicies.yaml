@@ -71,7 +71,7 @@ spec:
       protocol: TCP
 ---
 # doom-dashboard: accept traffic from nginx-gateway.
-# Egress: reach doom (game backend) and Prometheus in monitoring namespace.
+# Egress: reach doom (game backend), pgbouncer, uptimekuma, and Prometheus in monitoring namespace.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -103,6 +103,13 @@ spec:
   - to:
     - podSelector:
         matchLabels:
+          app: pgbouncer
+    ports:
+    - port: 5432
+      protocol: TCP
+  - to:
+    - podSelector:
+        matchLabels:
           app: uptimekuma
     ports:
     - port: 3001
@@ -118,25 +125,6 @@ spec:
       protocol: TCP
   - ports:
     - port: 443
-      protocol: TCP
----
-# mariadb: accept connections from any pod in the lab namespace.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-mariadb
-  namespace: lab
-spec:
-  podSelector:
-    matchLabels:
-      app: mariadb
-  policyTypes:
-  - Ingress
-  ingress:
-  - from:
-    - podSelector: {}
-    ports:
-    - port: 3306
       protocol: TCP
 ---
 # uptimekuma: accept traffic from nginx-gateway and doom-dashboard (metrics query).
@@ -166,3 +154,81 @@ spec:
       protocol: TCP
   egress:
   - {}
+---
+# postgres-cluster: accept connections from any pod in the lab namespace on port 5432.
+# CloudNativePG pods carry the cnpg.io/cluster label.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres
+  namespace: lab
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: postgres
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector: {}
+    ports:
+    - port: 5432
+      protocol: TCP
+---
+# pgbouncer: accept connections from any pod in the lab namespace on port 5432.
+# Egress: reach CloudNativePG cluster pods on port 5432.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-pgbouncer
+  namespace: lab
+spec:
+  podSelector:
+    matchLabels:
+      app: pgbouncer
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector: {}
+    ports:
+    - port: 5432
+      protocol: TCP
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          cnpg.io/cluster: postgres
+    ports:
+    - port: 5432
+      protocol: TCP
+---
+# minio: accept connections from any pod in the lab namespace on port 9000.
+# Egress on postgres-cluster pods: reach minio on port 9000 (e.g. for WAL archiving / backups).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-minio
+  namespace: lab
+spec:
+  podSelector:
+    matchLabels:
+      app: minio
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector: {}
+    ports:
+    - port: 9000
+      protocol: TCP
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          cnpg.io/cluster: postgres
+    ports:
+    - port: 9000
+      protocol: TCP
