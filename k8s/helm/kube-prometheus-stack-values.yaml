@@ -86,6 +86,8 @@ alertmanager:
 
 nodeExporter:
   enabled: true
+
+prometheus-node-exporter:
   extraArgs:
     - --no-collector.infiniband
 
