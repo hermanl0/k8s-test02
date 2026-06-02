@@ -103,7 +103,7 @@ spec:
   - to:
     - podSelector:
         matchLabels:
-          app: pgbouncer
+          cnpg.io/poolerName: postgres-pooler-rw
     ports:
     - port: 5432
       protocol: TCP
@@ -175,7 +175,7 @@ spec:
     - port: 5432
       protocol: TCP
 ---
-# pgbouncer: accept connections from any pod in the lab namespace on port 5432.
+# pgbouncer (CNPG Pooler): accept connections from any pod in the lab namespace on port 5432.
 # Egress: reach CloudNativePG cluster pods on port 5432.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -185,7 +185,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: pgbouncer
+      cnpg.io/poolerName: postgres-pooler-rw
   policyTypes:
   - Ingress
   - Egress

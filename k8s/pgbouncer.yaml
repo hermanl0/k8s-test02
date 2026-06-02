@@ -1,105 +1,36 @@
----
-apiVersion: v1
-kind: ConfigMap
+# CloudNativePG-managed PgBouncer connection pooler.
+# The operator manages the PgBouncer image, deployment, and authentication
+# against the postgres cluster — no hand-rolled image or SCRAM userlist needed.
+#
+# Creates a Service named "postgres-pooler-rw" on port 5432 that routes to the
+# current primary. Applications connect here instead of directly to PostgreSQL.
+#
+# Auth uses the auth_query mechanism: a dedicated cnpg_pooler_pgbouncer role and
+# a user_search SECURITY DEFINER function must exist in the cluster (see README /
+# the "Configure Pooler auth" step). The operator wires the rest automatically.
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
 metadata:
-  name: pgbouncer-config
+  name: postgres-pooler-rw
   namespace: lab
-  labels:
-    app: pgbouncer
-data:
-  pgbouncer.ini: |
-    [databases]
-    appdb = host=postgres-rw port=5432 dbname=appdb
-
-    [pgbouncer]
-    listen_addr = 0.0.0.0
-    listen_port = 5432
-    auth_type = scram-sha-256
-    auth_file = /etc/pgbouncer/userlist.txt
-    pool_mode = transaction
-    max_client_conn = 100
-    default_pool_size = 20
-    log_connections = 0
-    log_disconnections = 0
-    server_tls_sslmode = require
-
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: pgbouncer
-  namespace: lab
-  labels:
-    app: pgbouncer
 spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: pgbouncer
+  cluster:
+    name: postgres
+  instances: 2
+  type: rw
+  pgbouncer:
+    poolMode: transaction
+    parameters:
+      max_client_conn: "100"
+      default_pool_size: "20"
   template:
-    metadata:
-      labels:
-        app: pgbouncer
     spec:
-      securityContext:
-        seccompProfile:
-          type: RuntimeDefault
       containers:
-        - name: pgbouncer
-          image: bitnami/pgbouncer:1.22.0
-          securityContext:
-            runAsNonRoot: true
-            runAsUser: 70
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-          ports:
-            - name: pgbouncer
-              containerPort: 5432
-              protocol: TCP
-          resources:
-            requests:
-              cpu: 50m
-              memory: 64Mi
-            limits:
-              cpu: 200m
-              memory: 128Mi
-          livenessProbe:
-            tcpSocket:
-              port: 5432
-            initialDelaySeconds: 10
-            periodSeconds: 15
-            failureThreshold: 3
-          volumeMounts:
-            - name: config
-              mountPath: /etc/pgbouncer/pgbouncer.ini
-              subPath: pgbouncer.ini
-              readOnly: true
-            - name: userlist
-              mountPath: /etc/pgbouncer/userlist.txt
-              subPath: userlist.txt
-              readOnly: true
-      volumes:
-        - name: config
-          configMap:
-            name: pgbouncer-config
-        - name: userlist
-          secret:
-            secretName: pgbouncer-userlist
-
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: pgbouncer
-  namespace: lab
-  labels:
-    app: pgbouncer
-spec:
-  type: ClusterIP
-  selector:
-    app: pgbouncer
-  ports:
-    - name: pgbouncer
-      port: 5432
-      targetPort: 5432
-      protocol: TCP
+      - name: pgbouncer
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi

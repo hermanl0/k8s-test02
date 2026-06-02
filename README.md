@@ -16,7 +16,7 @@ Personal Kubernetes lab on Azure — live at **[doom.hl0.dev](https://doom.hl0.d
 | **NGINX Gateway Fabric** | Gateway API ingress — HTTP→HTTPS redirect, TLS termination |
 | **cert-manager** | Automatic Let's Encrypt TLS via Cloudflare DNS-01 |
 | **CloudNativePG** | 3-instance PostgreSQL 16 HA cluster (1 primary, 2 replicas) |
-| **pgBouncer** | Connection pooler in front of PostgreSQL |
+| **pgBouncer** | Connection pooler (CloudNativePG `Pooler`) in front of PostgreSQL |
 | **MinIO** | S3-compatible object storage for PostgreSQL WAL archiving + backups |
 | **kube-prometheus-stack** | Prometheus + Grafana + Alertmanager |
 | **Loki + Promtail** | Log aggregation |
@@ -93,8 +93,9 @@ kubectl rollout restart deployment/doom-dashboard -n lab
 kubectl get cluster postgres -n lab
 kubectl get pods -n lab -l cnpg.io/cluster=postgres
 
-# pgBouncer
-kubectl logs -n lab deployment/pgbouncer -f
+# pgBouncer (CNPG Pooler)
+kubectl get pooler -n lab
+kubectl logs -n lab -l cnpg.io/poolerName=postgres-pooler-rw -f
 
 # MinIO backup status
 kubectl get scheduledbackup -n lab
