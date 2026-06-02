@@ -152,9 +152,9 @@ data:
             "legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom"},
             "tooltip": {"mode": "multi", "sort": "desc"}
           },
-          "title": "HTTP Requests / s",
+          "title": "NGF Requests / s",
           "type": "timeseries",
-          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum by(ingress) (rate(nginx_ingress_controller_requests[5m]))", "legendFormat": "{{ingress}}", "refId": "A"}]
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "rate(nginx_gateway_fabric_http_requests_total[5m])", "legendFormat": "{{ingress}}", "refId": "A"}]
         },
         {
           "datasource": {"type": "prometheus", "uid": "prometheus"},
@@ -183,12 +183,12 @@ data:
             "legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom"},
             "tooltip": {"mode": "multi", "sort": "desc"}
           },
-          "title": "HTTP Status Codes",
+          "title": "NGF Connections",
           "type": "timeseries",
           "targets": [
-            {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(rate(nginx_ingress_controller_requests{status=~\"2..\"}[5m]))", "legendFormat": "2xx", "refId": "A"},
-            {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(rate(nginx_ingress_controller_requests{status=~\"4..\"}[5m]))", "legendFormat": "4xx", "refId": "B"},
-            {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(rate(nginx_ingress_controller_requests{status=~\"5..\"}[5m]))", "legendFormat": "5xx", "refId": "C"}
+            {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "nginx_gateway_fabric_connections_active", "legendFormat": "active", "refId": "A"},
+            {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "nginx_gateway_fabric_connections_reading", "legendFormat": "reading", "refId": "B"},
+            {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "nginx_gateway_fabric_connections_writing", "legendFormat": "writing", "refId": "C"}
           ]
         },
         {
@@ -215,9 +215,9 @@ data:
             "legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom"},
             "tooltip": {"mode": "multi", "sort": "desc"}
           },
-          "title": "p99 Response Latency",
+          "title": "p99 Reload Latency (ms)",
           "type": "timeseries",
-          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "histogram_quantile(0.99, sum by(le, ingress) (rate(nginx_ingress_controller_response_duration_seconds_bucket[5m])))", "legendFormat": "{{ingress}} p99", "refId": "A"}]
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "histogram_quantile(0.99, rate(nginx_gateway_fabric_nginx_reloads_milliseconds_bucket[5m]))", "legendFormat": "p99 ms", "refId": "A"}]
         },
         {
           "datasource": {"type": "prometheus", "uid": "prometheus"},
