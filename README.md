@@ -15,6 +15,9 @@ Personal Kubernetes lab on Azure — live at **[doom.hl0.dev](https://doom.hl0.d
 | **AKS** (2 × Standard_D2s_v6) | Runs the cluster |
 | **NGINX Gateway Fabric** | Gateway API ingress — HTTP→HTTPS redirect, TLS termination |
 | **cert-manager** | Automatic Let's Encrypt TLS via Cloudflare DNS-01 |
+| **CloudNativePG** | 3-instance PostgreSQL 16 HA cluster (1 primary, 2 replicas) |
+| **pgBouncer** | Connection pooler in front of PostgreSQL |
+| **MinIO** | S3-compatible object storage for PostgreSQL WAL archiving + backups |
 | **kube-prometheus-stack** | Prometheus + Grafana + Alertmanager |
 | **Loki + Promtail** | Log aggregation |
 | **Uptime Kuma** | Public status page |
@@ -62,7 +65,7 @@ Public status page at [status.hl0.dev](https://status.hl0.dev) — monitors all 
 
 Push to `main` → GitHub Actions → validate YAML + secret scan → helm upgrades → `kubectl apply` → Cloudflare DNS upsert → rollout verify. About **3–4 minutes** end to end.
 
-**Secrets needed:** `AZURE_CREDENTIALS`, `GH_PAT`, `CLOUDFLARE_API_TOKEN`, `GRAFANA_ADMIN_PASSWORD`, `SNOW_PASS`, `UPTIME_KUMA_API_KEY`
+**Secrets needed:** `AZURE_CREDENTIALS`, `GH_PAT`, `CLOUDFLARE_API_TOKEN`, `GRAFANA_ADMIN_PASSWORD`, `SNOW_PASS`, `UPTIME_KUMA_API_KEY`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `POSTGRES_APP_PASSWORD`
 
 ---
 
@@ -85,4 +88,15 @@ kubectl logs -n lab deployment/doom-dashboard -f
 
 # Restart doom-dashboard
 kubectl rollout restart deployment/doom-dashboard -n lab
+
+# PostgreSQL cluster status
+kubectl get cluster postgres -n lab
+kubectl get pods -n lab -l cnpg.io/cluster=postgres
+
+# pgBouncer
+kubectl logs -n lab deployment/pgbouncer -f
+
+# MinIO backup status
+kubectl get scheduledbackup -n lab
+kubectl get backup -n lab
 ```

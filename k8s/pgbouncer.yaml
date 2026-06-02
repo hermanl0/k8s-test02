@@ -41,9 +41,17 @@ spec:
       labels:
         app: pgbouncer
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: pgbouncer
           image: pgbouncer/pgbouncer:1.22.0
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 70
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
           ports:
             - name: pgbouncer
               containerPort: 5432

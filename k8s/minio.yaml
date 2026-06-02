@@ -34,9 +34,14 @@ spec:
       labels:
         app: minio
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: minio
           image: quay.io/minio/minio:latest
+          securityContext:
+            allowPrivilegeEscalation: false
           args:
             - server
             - /data
