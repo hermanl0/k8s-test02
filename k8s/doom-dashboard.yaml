@@ -457,6 +457,7 @@ data:
         .hz-val.hi{color:var(--grn);text-shadow:0 0 12px rgba(0,168,72,.45)}
         .hz-unit{font-size:15px;color:var(--dim);letter-spacing:3px}
         .hz-verdict{text-align:center;font-size:11px;color:var(--dim);margin-top:8px;letter-spacing:1px}
+        .hz-verdict a{color:var(--rhi);text-decoration:underline;text-shadow:0 0 6px rgba(255,34,0,.4)}
         .you-row{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:6px}
         .you-k{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--dim);flex-shrink:0}
         .you-v{font-size:13px;color:var(--tx);text-align:right;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
@@ -732,11 +733,11 @@ data:
         if(Math.abs(hz-raw)>6) hz=Math.round(raw);
         el.textContent=hz;
         var cls, verdict;
-        if(hz<=60){ cls='lo'; verdict='60 Hz?! my condolences — show a colleague.'; }
+        if(hz<=60){ cls='lo'; verdict='<a href="https://testufo.com/framerates-text#count=4" target="_blank" rel="noopener">i&#39;m sorry but you need a new monitor</a>'; }
         else if(hz<120){ cls=''; verdict='decent. but you can do better.'; }
         else { cls='hi'; verdict='buttery smooth. you may judge others.'; }
         el.className='hz-val '+cls;
-        vd.textContent=verdict;
+        vd.innerHTML=verdict;
       }
 
       function uaInfo(){
