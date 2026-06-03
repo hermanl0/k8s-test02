@@ -93,6 +93,15 @@ data:
     def _is_public(ip):
         if ip in SKIP_IPS:
             return False
+        if ':' in ip:  # IPv6
+            low = ip.lower()
+            if low in ('::1', '::'):                 # loopback / unspecified
+                return False
+            if low.startswith(('fc', 'fd')):         # unique local fc00::/7
+                return False
+            if re.match(r'fe[89ab][0-9a-f]?:', low):  # link-local fe80::/10
+                return False
+            return True
         return not re.match(r'^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|127\.|100\.|169\.254\.)', ip)
 
     def _whoami_geo(ip):
@@ -462,7 +471,7 @@ data:
         .you-k{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--dim);flex-shrink:0}
         .you-v{font-size:13px;color:var(--tx);text-align:right;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
         .you-v.hl{color:var(--amb);text-shadow:0 0 6px rgba(208,128,0,.25)}
-        .you-v.ip{font-size:16px;color:var(--grn);text-shadow:0 0 6px rgba(0,168,72,.3)}
+        .you-v.ip{font-size:15px;color:var(--grn);text-shadow:0 0 6px rgba(0,168,72,.3);white-space:normal;overflow:visible;text-overflow:clip;word-break:break-all}
         #log-sec{padding:10px 14px;flex:1;overflow-y:auto;min-height:0;border-top:1px solid var(--bdr)}
         .log-row{display:flex;align-items:baseline;gap:5px;margin-bottom:4px;line-height:1.2}
         .log-lvl{font-size:9px;font-weight:bold;flex-shrink:0;width:16px;text-align:center;
