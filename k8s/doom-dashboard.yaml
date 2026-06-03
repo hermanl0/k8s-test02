@@ -451,6 +451,12 @@ data:
         .uk-up{font-size:10px;color:var(--dim);flex-shrink:0;width:40px;text-align:right}
         a.uk-name{color:var(--tx);text-decoration:none}
         a.uk-name:hover{color:var(--grn);text-shadow:0 0 4px rgba(0,168,72,.5)}
+        .hz-wrap{display:flex;align-items:baseline;justify-content:center;gap:6px;padding:2px 0}
+        .hz-val{font-size:46px;line-height:1;font-variant-numeric:tabular-nums;color:var(--amb);text-shadow:0 0 12px rgba(208,128,0,.35)}
+        .hz-val.lo{color:var(--rhi);text-shadow:0 0 12px rgba(255,34,0,.45)}
+        .hz-val.hi{color:var(--grn);text-shadow:0 0 12px rgba(0,168,72,.45)}
+        .hz-unit{font-size:15px;color:var(--dim);letter-spacing:3px}
+        .hz-verdict{text-align:center;font-size:11px;color:var(--dim);margin-top:8px;letter-spacing:1px}
         .you-row{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:6px}
         .you-k{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--dim);flex-shrink:0}
         .you-v{font-size:13px;color:var(--tx);text-align:right;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
@@ -550,6 +556,11 @@ data:
         </div>
       </div>
       <div class="col">
+        <div class="sec">
+          <div class="sec-hd">&#128421; display refresh rate</div>
+          <div class="hz-wrap"><span class="hz-val" id="hz-val">&mdash;</span><span class="hz-unit">Hz</span></div>
+          <div class="hz-verdict" id="hz-verdict">measuring&hellip;</div>
+        </div>
         <div class="sec">
           <div class="sec-hd">&#128225; information about you</div>
           <div id="you-info"><div class="you-row"><span class="you-v" style="color:#333">scanning&hellip;</span></div></div>
@@ -698,6 +709,36 @@ data:
         // doom CPU% -- fixed 0-100 scale, drawn on top
         drawSeries(chart.doom_cpu || [], 100, '#00a848', 'rgba(0,168,72,0.11)');
       }
+      // Measure display refresh rate: requestAnimationFrame fires once per
+      // screen refresh, so the median gap between frames gives the Hz.
+      function measureHz(){
+        var deltas=[], last=null, frames=0;
+        function step(t){
+          if(last!=null){ var dt=t-last; if(dt>0.5 && dt<100) deltas.push(dt); }
+          last=t; frames++;
+          if(frames<200 && deltas.length<150) requestAnimationFrame(step);
+          else finishHz(deltas);
+        }
+        requestAnimationFrame(step);
+      }
+      function finishHz(deltas){
+        var el=document.getElementById('hz-val'), vd=document.getElementById('hz-verdict');
+        if(deltas.length<5){ vd.textContent='unavailable'; return; }
+        deltas.sort(function(a,b){return a-b;});
+        var med=deltas[Math.floor(deltas.length/2)];
+        var raw=1000/med;
+        var common=[24,30,48,50,60,75,90,100,120,144,165,180,200,240,360,500];
+        var hz=common.reduce(function(p,c){return Math.abs(c-raw)<Math.abs(p-raw)?c:p;});
+        if(Math.abs(hz-raw)>6) hz=Math.round(raw);
+        el.textContent=hz;
+        var cls, verdict;
+        if(hz<=60){ cls='lo'; verdict='60 Hz?! my condolences — show a colleague.'; }
+        else if(hz<120){ cls=''; verdict='decent. but you can do better.'; }
+        else { cls='hi'; verdict='buttery smooth. you may judge others.'; }
+        el.className='hz-val '+cls;
+        vd.textContent=verdict;
+      }
+
       function uaInfo(){
         var ua=navigator.userAgent, br='Unknown', os='Unknown', m;
         if(/Windows NT 10/.test(ua)) os='Windows 10/11';
@@ -829,7 +870,7 @@ data:
           console.error(e);
         }
       }
-      drawSpark();drawChart(null);tick();loadYou();setInterval(tick,5000);
+      drawSpark();drawChart(null);tick();loadYou();measureHz();setInterval(tick,5000);
     </script>
     </body>
     </html>
