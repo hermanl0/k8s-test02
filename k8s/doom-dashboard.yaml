@@ -263,7 +263,7 @@ data:
                     best[key] = (ts_sec, ns, msg, lvl)
         result = []
         for ts_sec, ns, msg, lvl in sorted(best.values(), key=lambda x: x[0], reverse=True)[:15]:
-            t = time.gmtime(ts_sec)
+            t = time.localtime(ts_sec)
             result.append({"ts":  f"{t.tm_hour:02d}:{t.tm_min:02d}:{t.tm_sec:02d}",
                            "ns":  ns, "msg": msg[:90], "lvl": lvl})
         return result
@@ -964,6 +964,10 @@ spec:
           value: "1"
         - name: PYTHONUNBUFFERED
           value: "1"
+        # Europe/Oslo as a self-contained POSIX TZ string (DST-aware) so log
+        # timestamps render in local time without needing the tzdata package.
+        - name: TZ
+          value: "CET-1CEST,M3.5.0,M10.5.0/3"
         - name: UPTIME_KUMA_API_KEY
           valueFrom:
             secretKeyRef:
