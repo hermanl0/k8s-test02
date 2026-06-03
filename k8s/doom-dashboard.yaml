@@ -460,6 +460,12 @@ data:
         .uk-up{font-size:10px;color:var(--dim);flex-shrink:0;width:40px;text-align:right}
         a.uk-name{color:var(--tx);text-decoration:none}
         a.uk-name:hover{color:var(--grn);text-shadow:0 0 4px rgba(0,168,72,.5)}
+        .hz-summary{cursor:pointer;list-style:none;user-select:none;font-size:11px;letter-spacing:1px;
+          color:var(--amb);text-align:center;padding:4px 0;transition:color .15s}
+        .hz-summary::-webkit-details-marker{display:none}
+        .hz-summary:hover{color:var(--rhi);text-shadow:0 0 6px rgba(255,34,0,.35)}
+        details.hz-details[open] .hz-summary{color:var(--dim);font-size:10px;letter-spacing:3px;
+          text-transform:uppercase;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--bdr)}
         .hz-wrap{display:flex;align-items:baseline;justify-content:center;gap:6px;padding:2px 0}
         .hz-val{font-size:46px;line-height:1;font-variant-numeric:tabular-nums;color:var(--amb);text-shadow:0 0 12px rgba(208,128,0,.35)}
         .hz-val.lo{color:var(--rhi);text-shadow:0 0 12px rgba(255,34,0,.45)}
@@ -567,9 +573,11 @@ data:
       </div>
       <div class="col">
         <div class="sec">
-          <div class="sec-hd">&#128421; display refresh rate</div>
-          <div class="hz-wrap"><span class="hz-val" id="hz-val">&mdash;</span><span class="hz-unit">Hz</span></div>
-          <div class="hz-verdict" id="hz-verdict">measuring&hellip;</div>
+          <details class="hz-details" id="hz-details">
+            <summary class="hz-summary">&#9888; only click here if you want to be judged</summary>
+            <div class="hz-wrap"><span class="hz-val" id="hz-val">&mdash;</span><span class="hz-unit">Hz</span></div>
+            <div class="hz-verdict" id="hz-verdict">measuring&hellip;</div>
+          </details>
         </div>
         <div class="sec">
           <div class="sec-hd">&#128225; information about you</div>
@@ -880,7 +888,14 @@ data:
           console.error(e);
         }
       }
-      drawSpark();drawChart(null);tick();loadYou();measureHz();setInterval(tick,5000);
+      // Refresh-rate measurement only runs once the visitor opts in to judgment.
+      (function(){
+        var det=document.getElementById('hz-details'), done=false;
+        det.addEventListener('toggle', function(){
+          if(det.open && !done){ done=true; measureHz(); }
+        });
+      })();
+      drawSpark();drawChart(null);tick();loadYou();setInterval(tick,5000);
     </script>
     </body>
     </html>
