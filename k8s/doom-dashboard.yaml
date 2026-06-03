@@ -21,6 +21,16 @@ data:
             try_files /index.html =404;
         }
 
+        # The page ships a data-URI favicon, but browsers/crawlers still probe
+        # these static paths. Answer them quietly so they don't spam the log.
+        location = /favicon.ico { access_log off; log_not_found off; return 204; }
+        location ~* ^/apple-touch-icon.*\.png$ { access_log off; log_not_found off; return 204; }
+        location = /robots.txt {
+            access_log off; log_not_found off;
+            default_type text/plain;
+            return 200 "User-agent: *\nDisallow: /\n";
+        }
+
         location /doom/ {
             proxy_pass http://doom:8000/;
             proxy_set_header Host $host;
