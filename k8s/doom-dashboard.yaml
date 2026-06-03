@@ -57,89 +57,8 @@ data:
 
     PROM      = "http://kube-prometheus-stack-prometheus.monitoring:9090/api/v1/query"
     PROM_RANGE = "http://kube-prometheus-stack-prometheus.monitoring:9090/api/v1/query_range"
-    SNOW_URL  = os.environ.get('SNOW_URL', '').rstrip('/')
-    SNOW_USER = os.environ.get('SNOW_USER', '')
-    SNOW_PASS = os.environ.get('SNOW_PASS', '')
     UK_URL    = "http://uptimekuma.lab:3001"
     UK_KEY    = os.environ.get('UPTIME_KUMA_API_KEY', '')
-
-    # --- PostgreSQL (via the CNPG Pooler) ----------------------------------
-    # Incidents fetched from ServiceNow are persisted here as a local audit log,
-    # then read back for the dashboard's "incident history" panel. The whole path
-    # (write -> pooler -> primary -> replicas -> MinIO backups) is exercised here.
-    _dbhost_raw = os.environ.get('DB_HOST', '')        # "host:port"
-    DB_NAME = os.environ.get('DB_NAME', 'appdb')
-    DB_USER = os.environ.get('DB_USER', '')
-    DB_PASS = os.environ.get('DB_PASS', '')
-    if ':' in _dbhost_raw:
-        DB_HOST, _p = _dbhost_raw.rsplit(':', 1)
-        DB_PORT = int(_p)
-    else:
-        DB_HOST, DB_PORT = _dbhost_raw, 5432
-
-    try:
-        import pg8000.dbapi as _pg
-    except Exception as _e:
-        _pg = None
-        print(f"[db] pg8000 unavailable, DB features disabled: {_e}", flush=True)
-
-    def _db_conn():
-        if not (_pg and DB_HOST and DB_USER and DB_PASS):
-            return None
-        return _pg.connect(host=DB_HOST, port=DB_PORT, database=DB_NAME,
-                           user=DB_USER, password=DB_PASS, timeout=5)
-
-    def _persist_incidents(snow):
-        recent = (snow or {}).get('recent', [])
-        if not recent:
-            return
-        conn = None
-        try:
-            conn = _db_conn()
-            if conn is None:
-                return
-            cur = conn.cursor()
-            for i in recent:
-                cur.execute(
-                    "INSERT INTO incident_log "
-                    "(number, short_description, priority, state, first_seen, last_seen) "
-                    "VALUES (%s, %s, %s, %s, NOW(), NOW()) "
-                    "ON CONFLICT (number) DO UPDATE SET "
-                    "short_description = EXCLUDED.short_description, "
-                    "priority = EXCLUDED.priority, last_seen = NOW()",
-                    (i.get('num'), i.get('desc'), str(i.get('prio', '')), 'open'))
-            conn.commit()
-        except Exception as e:
-            print(f"[db] persist: {e}", flush=True)
-        finally:
-            if conn:
-                try: conn.close()
-                except Exception: pass
-
-    def _fetch_incident_history():
-        conn = None
-        try:
-            conn = _db_conn()
-            if conn is None:
-                return None
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT number, short_description, priority, "
-                "to_char(first_seen, 'MM-DD HH24:MI'), "
-                "to_char(last_seen, 'MM-DD HH24:MI') "
-                "FROM incident_log ORDER BY last_seen DESC LIMIT 8")
-            return [
-                {"num": r[0], "desc": r[1], "prio": str(r[2]),
-                 "first": r[3], "last": r[4]}
-                for r in cur.fetchall()
-            ]
-        except Exception as e:
-            print(f"[db] history: {e}", flush=True)
-            return None
-        finally:
-            if conn:
-                try: conn.close()
-                except Exception: pass
 
     SCALARS = {
         "cpu":    '100 - avg(rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100',
@@ -218,55 +137,8 @@ data:
             country_counts[cc]["count"] += 1
         return sorted(country_counts.values(), key=lambda x: -x["count"])[:6]
 
-    # Alert rules evaluated every 60s. Scalar rules fire when the single
-    # returned value exceeds threshold. Vector rules fire once per result row.
-    # impact/urgency drive ServiceNow priority: 1+1->P1, 2+1->P2.
-    ALERT_RULES = [
-        {
-            "key": "node-cpu-high", "scalar": True,
-            "impact": "1", "urgency": "1",
-            "query":     '(1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m]))) * 100',
-            "threshold": 90,
-            "title_tpl": "AKS lab-aks: cluster CPU critical ({val:.0f}%)",
-            "desc_tpl":  "Cluster-average CPU has exceeded 90% sustained over 5 minutes (current: {val:.1f}%). Risk of throttling and latency spikes across all workloads.",
-        },
-        {
-            "key": "node-mem-high", "scalar": True,
-            "impact": "1", "urgency": "1",
-            "query":     '(1 - avg(node_memory_MemAvailable_bytes/node_memory_MemTotal_bytes)) * 100',
-            "threshold": 90,
-            "title_tpl": "AKS lab-aks: cluster memory critical ({val:.0f}%)",
-            "desc_tpl":  "Cluster-average memory has exceeded 90% sustained over 5 minutes (current: {val:.1f}%). Risk of OOMKill events and pod eviction.",
-        },
-        {
-            "key": "pod-restart", "scalar": False,
-            "impact": "2", "urgency": "1",
-            "query":     'sort_desc(increase(kube_pod_container_status_restarts_total{container!="",namespace=~"lab|monitoring|ingress-nginx|cert-manager"}[1h])) > 2',
-            "key_sfx":   "{ns}-{pod}",
-            "title_tpl": "Pod restart loop detected: {ns}/{pod}",
-            "desc_tpl":  "Pod {pod} in namespace {ns} has restarted {val:.0f} times in the past hour. Possible CrashLoopBackOff or OOMKill. Immediate investigation recommended.",
-        },
-        {
-            "key": "pod-not-running", "scalar": False,
-            "impact": "2", "urgency": "1",
-            "query":     'kube_pod_status_phase{phase=~"Pending|Failed",namespace=~"lab|monitoring|ingress-nginx|cert-manager"} == 1',
-            "key_sfx":   "{ns}-{pod}-{phase}",
-            "title_tpl": "Pod stuck in {phase}: {ns}/{pod}",
-            "desc_tpl":  "Pod {pod} in namespace {ns} has been in {phase} state and is not recovering. Manual investigation may be required.",
-        },
-    ]
-
-    # Keys the automation manages -- only these are auto-resolved when alerts clear.
-    # Incidents with other keys (e.g. demo-*) are left untouched.
-    _ALERT_KEYS = frozenset(r["key"] for r in ALERT_RULES)
-
-    def _managed_key(key):
-        return any(key == k or key.startswith(k + "-") for k in _ALERT_KEYS)
-
     _cache  = {}
     _lock   = threading.Lock()
-    _open   = {}  # alert_key -> snow sys_id
-    _olock  = threading.Lock()
 
     def _query(q):
         url = PROM + "?query=" + urllib.parse.quote(q)
@@ -303,79 +175,6 @@ data:
         except Exception:
             out["pod_list"] = []
         return out
-
-    def _snow_req(method, path, body=None):
-        creds = base64.b64encode(f"{SNOW_USER}:{SNOW_PASS}".encode()).decode()
-        hdrs  = {"Authorization": f"Basic {creds}",
-                 "Accept": "application/json", "Content-Type": "application/json"}
-        data  = json.dumps(body).encode() if body else None
-        req   = urllib.request.Request(SNOW_URL + path, data=data, headers=hdrs, method=method)
-        with urllib.request.urlopen(req, timeout=10) as r:
-            return json.load(r)
-
-    def _fetch_snow():
-        if not (SNOW_URL and SNOW_USER and SNOW_PASS):
-            return None
-        creds = base64.b64encode(f"{SNOW_USER}:{SNOW_PASS}".encode()).decode()
-        hdrs  = {"Authorization": f"Basic {creds}", "Accept": "application/json"}
-        base_q = _SNOW_OPEN_Q
-        stats_url = (SNOW_URL + "/api/now/stats/incident"
-                     "?sysparm_query=" + base_q +
-                     "&sysparm_group_by=priority&sysparm_count=true")
-        req = urllib.request.Request(stats_url, headers=hdrs)
-        with urllib.request.urlopen(req, timeout=8) as r:
-            stats = json.load(r)
-        counts = {}
-        for item in stats.get('result', []):
-            p = item['groupby_fields'][0]['value']
-            counts[f"p{p}"] = int(item['stats']['count'])
-        inc_url = (SNOW_URL + "/api/now/table/incident"
-                   "?sysparm_limit=5"
-                   "&sysparm_fields=number,short_description,priority,sys_id"
-                   "&sysparm_query=" + base_q + "%5EORDERBYpriority%5EORDERBYsys_updated_onDESC")
-        req = urllib.request.Request(inc_url, headers=hdrs)
-        with urllib.request.urlopen(req, timeout=8) as r:
-            incs = json.load(r)
-        recent = [
-            {"num":  i['number'],
-             "desc": i['short_description'][:52],
-             "prio": i['priority'],
-             "url":  f"{SNOW_URL}/incident.do?sys_id={i['sys_id']}"}
-            for i in incs.get('result', [])
-        ]
-        return {"priority_counts": counts, "recent": recent}
-
-    def _eval_alerts():
-        firing = {}
-        for rule in ALERT_RULES:
-            try:
-                results = _query(rule["query"])
-                impact, urgency = rule["impact"], rule["urgency"]
-                if rule["scalar"]:
-                    if not results:
-                        continue
-                    val = float(results[0]["value"][1])
-                    if val < rule["threshold"]:
-                        continue
-                    key   = rule["key"]
-                    title = rule["title_tpl"].format(val=val)
-                    desc  = rule["desc_tpl"].format(val=val)
-                    firing[key] = (impact, urgency, title, desc)
-                else:
-                    for r in results:
-                        m     = r["metric"]
-                        val   = float(r["value"][1])
-                        ns    = m.get("namespace", "")
-                        pod   = m.get("pod", m.get("instance", ""))
-                        phase = m.get("phase", "")
-                        sfx   = rule["key_sfx"].format(ns=ns, pod=pod, phase=phase, val=val)
-                        key   = f"{rule['key']}-{sfx}"
-                        title = rule["title_tpl"].format(ns=ns, pod=pod, phase=phase, val=val)
-                        desc  = rule["desc_tpl"].format(ns=ns, pod=pod, phase=phase, val=val)
-                        firing[key] = (impact, urgency, title, desc)
-            except Exception as e:
-                print(f"[snow] alert eval ({rule['key']}): {e}", flush=True)
-        return firing
 
     _UK_LINE_RE = re.compile(r'^(monitor_status|monitor_response_time)\{([^}]+)\}\s+([\d.]+)', re.M)
     _UK_LBL_RE  = re.compile(r'(\w+)="([^"]*)"')
@@ -481,88 +280,18 @@ data:
                 out[key] = []
         return out
 
-    # Open incidents: state IN (1=New, 2=In Progress, 3=On Hold).
-    # Resolved (6) and Closed (7) are excluded -- active flag stays true at state=6.
-    _SNOW_OPEN_Q = "correlation_idSTARTSWITHk8s-lab%3A%5EstateIN1%2C2%2C3"
-
-    def _sync_snow():
-        if not (SNOW_URL and SNOW_USER and SNOW_PASS):
-            return
-        firing = _eval_alerts()
-        # Query SNOW as source of truth -- survives pod restarts
-        resp = _snow_req("GET", f"/api/now/table/incident?sysparm_query={_SNOW_OPEN_Q}"
-                                f"&sysparm_fields=sys_id,number,correlation_id&sysparm_limit=50")
-        open_in_snow = {
-            i["correlation_id"][len("k8s-lab:"):]: i["sys_id"]
-            for i in resp.get("result", [])
-        }
-        with _olock:
-            _open.clear()
-            _open.update(open_in_snow)
-        # Create incidents for newly-firing alerts not yet open in SNOW
-        for key, (impact, urgency, title, desc) in firing.items():
-            if key in open_in_snow:
-                continue
-            corr = f"k8s-lab:{key}"
-            try:
-                r2 = _snow_req("POST", "/api/now/table/incident", {
-                    "short_description": title[:160],
-                    "description":       desc,
-                    "impact":            impact,
-                    "urgency":           urgency,
-                    "correlation_id":    corr,
-                    "category":          "infrastructure",
-                })
-                print(f"[snow] opened {r2['result']['number']} -- {title[:60]}", flush=True)
-            except Exception as e:
-                print(f"[snow] create ({key}): {e}", flush=True)
-        # Resolve SNOW incidents whose alert condition has cleared.
-        # Only touch incidents this automation manages -- leave demo/manual ones alone.
-        for key, sys_id in list(open_in_snow.items()):
-            if key in firing or not _managed_key(key):
-                continue
-            try:
-                _snow_req("PATCH", f"/api/now/table/incident/{sys_id}", {
-                    "state":       "6",
-                    "close_code":  "Solution provided",
-                    "close_notes": "Condition cleared automatically by cluster monitoring.",
-                })
-                print(f"[snow] resolved {sys_id} ({key})", flush=True)
-            except Exception as e:
-                print(f"[snow] resolve ({key}): {e}", flush=True)
-
-    _snow_tick    = 0
-    _snow_cache   = {}
+    _slow_tick    = 0
     _geo_cache    = []
     _uptime_cache = []
     _chart_cache  = {}
     _log_cache    = []
-    _inc_hist_cache = []
 
     def _loop():
-        global _snow_tick, _snow_cache, _geo_cache, _uptime_cache, _chart_cache, _log_cache
+        global _slow_tick, _geo_cache, _uptime_cache, _chart_cache, _log_cache
         while True:
             try:
                 data = _fetch()
-                if _snow_tick % 12 == 0:
-                    try:
-                        _sync_snow()
-                    except Exception as e:
-                        print(f"[snow] sync: {e}", flush=True)
-                    try:
-                        s = _fetch_snow()
-                        if s is not None:
-                            _snow_cache.clear()
-                            _snow_cache.update(s)
-                    except Exception as e:
-                        print(f"[snow] fetch: {e}", flush=True)
-                    try:
-                        _persist_incidents(_snow_cache)
-                        h = _fetch_incident_history()
-                        if h is not None:
-                            _inc_hist_cache[:] = h
-                    except Exception as e:
-                        print(f"[db] loop: {e}", flush=True)
+                if _slow_tick % 12 == 0:
                     try:
                         _geo_cache[:] = _fetch_geo()
                     except Exception as e:
@@ -575,15 +304,13 @@ data:
                         _log_cache[:] = _fetch_logs()
                     except Exception as e:
                         print(f"[log] fetch: {e}", flush=True)
-                _snow_tick += 1
+                _slow_tick += 1
                 try:
                     c = _fetch_chart()
                     _chart_cache.clear()
                     _chart_cache.update(c)
                 except Exception as e:
                     print(f"[chart] fetch: {e}", flush=True)
-                if _snow_cache:
-                    data['snow'] = dict(_snow_cache)
                 if _geo_cache:
                     data['geo'] = list(_geo_cache)
                 if _uptime_cache:
@@ -592,8 +319,6 @@ data:
                     data['chart'] = dict(_chart_cache)
                 if _log_cache is not None:
                     data['logs'] = list(_log_cache)
-                if _inc_hist_cache:
-                    data['incident_history'] = list(_inc_hist_cache)
                 with _lock:
                     _cache.clear()
                     _cache.update(data)
@@ -700,14 +425,6 @@ data:
         .rv.sm{font-size:20px}
         #spark{display:flex;align-items:flex-end;gap:2px;height:48px;margin-top:10px}
         .sb{flex:1;background:var(--red);min-height:2px;border-radius:1px 1px 0 0;transition:height .4s ease}
-        .snow-p{display:flex;justify-content:space-around;padding:4px 0 8px}
-        .snow-pb{text-align:center}
-        .snow-pv{font-size:34px;line-height:1;font-variant-numeric:tabular-nums}
-        .snow-pl{font-size:10px;color:var(--dim);letter-spacing:2px;margin-top:3px}
-        .snow-p1{color:var(--rhi);text-shadow:0 0 8px rgba(255,34,0,.35)}
-        .snow-p2{color:var(--amb);text-shadow:0 0 8px rgba(208,128,0,.3)}
-        .snow-p3{color:#b0b000}
-        .snow-p4{color:var(--dim)}
         .inc-row{display:flex;align-items:center;gap:6px;margin-bottom:5px}
         .inc-row a{display:flex;align-items:center;gap:6px;text-decoration:none;flex:1;min-width:0;
           padding:3px 5px;border-radius:3px;transition:background .15s}
@@ -779,8 +496,6 @@ data:
       <div class="st"><div class="sv" id="sc-nodes">&mdash;</div><div class="sl">nodes</div></div>
       <div class="st"><div class="sv" id="sc-cpu">&mdash;</div><div class="sl">cpu</div></div>
       <div class="st"><div class="sv" id="sc-mem">&mdash;</div><div class="sl">mem</div></div>
-      <div class="st"><div class="sv snow-p1" id="sc-p1">&mdash;</div><div class="sl">p1 inc</div></div>
-      <div class="st"><div class="sv snow-p2" id="sc-p2">&mdash;</div><div class="sl">p2 inc</div></div>
     </div>
     <div id="layout">
       <div class="col">
@@ -832,20 +547,6 @@ data:
         </div>
       </div>
       <div class="col">
-        <div class="sec">
-          <div class="sec-hd">&#9889; servicenow</div>
-          <div class="snow-p">
-            <div class="snow-pb"><div class="snow-pv snow-p1" id="sn-p1">&mdash;</div><div class="snow-pl">P1</div></div>
-            <div class="snow-pb"><div class="snow-pv snow-p2" id="sn-p2">&mdash;</div><div class="snow-pl">P2</div></div>
-            <div class="snow-pb"><div class="snow-pv snow-p3" id="sn-p3">&mdash;</div><div class="snow-pl">P3</div></div>
-            <div class="snow-pb"><div class="snow-pv snow-p4" id="sn-p4">&mdash;</div><div class="snow-pl">P4</div></div>
-          </div>
-          <div id="sn-inc"><div class="inc-row"><span class="inc-desc" style="color:#333">loading&hellip;</span></div></div>
-        </div>
-        <div class="sec">
-          <div class="sec-hd">&#128190; incident history &middot; postgres</div>
-          <div id="inc-hist"><div class="inc-row"><span class="inc-desc" style="color:#333">loading&hellip;</span></div></div>
-        </div>
         <div class="sec">
           <div class="sec-hd">&#127757; visitor countries</div>
           <div id="geo-list"><div class="geo-row"><span class="geo-loc" style="color:#333">loading&hellip;</span></div></div>
@@ -1050,38 +751,6 @@ data:
             document.getElementById('geo-list').innerHTML=
               '<div class="geo-row"><span class="geo-loc" style="color:#555">no data yet</span></div>';
           }
-          if(d.snow){
-            var pc=d.snow.priority_counts||{};
-            ['1','2','3','4'].forEach(function(p){
-              var el=document.getElementById('sn-p'+p);
-              if(el) el.textContent=(pc['p'+p]!=null?pc['p'+p]:'0');
-            });
-            document.getElementById('sc-p1').textContent=pc['p1']||0;
-            document.getElementById('sc-p2').textContent=pc['p2']||0;
-            var incs=d.snow.recent||[];
-            document.getElementById('sn-inc').innerHTML=incs.length
-              ?incs.map(function(r){
-                  var pc='p'+(r.prio<=4?r.prio:4);
-                  return '<div class="inc-row"><a href="'+r.url+'" target="_blank" rel="noopener">'+
-                    '<span class="inc-badge '+pc+'">P'+r.prio+'</span>'+
-                    '<span class="inc-num">'+r.num+'</span>'+
-                    '<span class="inc-desc">'+r.desc+'</span></a></div>';
-                }).join('')
-              :'<div class="inc-row"><span class="inc-desc" style="color:#555">no open incidents</span></div>';
-          }
-          if(d.incident_history!=null){
-            var hist=d.incident_history||[];
-            document.getElementById('inc-hist').innerHTML=hist.length
-              ?hist.map(function(r){
-                  var pc='p'+(r.prio<=4?r.prio:4);
-                  return '<div class="inc-row"><div style="display:flex;align-items:center;gap:6px;flex:1;min-width:0">'+
-                    '<span class="inc-badge '+pc+'">P'+r.prio+'</span>'+
-                    '<span class="inc-num">'+r.num+'</span>'+
-                    '<span class="inc-desc">'+r.desc+'</span>'+
-                    '<span style="font-size:10px;color:var(--dim);white-space:nowrap;margin-left:auto">'+r.last+'</span></div></div>';
-                }).join('')
-              :'<div class="inc-row"><span class="inc-desc" style="color:#555">no history yet</span></div>';
-          }
           if(d.chart){ lastChart = d.chart; drawChart(d.chart); }
           if(d.logs!=null){
             document.getElementById('log-list').innerHTML=d.logs.length
@@ -1165,58 +834,17 @@ spec:
           mountPath: /tmp
       - name: metrics
         image: python:3.12-alpine
-        # pg8000 (pure-Python, SCRAM-capable PG driver) is installed at startup
-        # into an emptyDir so the read-only rootfs is preserved. Uses ';' so the
-        # server still starts if PyPI is unreachable — DB features degrade gracefully.
-        command:
-        - sh
-        - -c
-        - 'pip install --no-cache-dir --target=/deps "pg8000==1.31.2" 2>/dev/null || true; exec python3 /app/metrics_server.py'
+        command: ["python3", "/app/metrics_server.py"]
         env:
         - name: PYTHONDONTWRITEBYTECODE
           value: "1"
         - name: PYTHONUNBUFFERED
           value: "1"
-        - name: PYTHONPATH
-          value: "/deps"
-        - name: TMPDIR
-          value: "/tmp"
-        - name: HOME
-          value: "/tmp"
-        - name: DB_USER
-          valueFrom:
-            secretKeyRef:
-              name: postgres-app
-              key: username
-        - name: DB_PASS
-          valueFrom:
-            secretKeyRef:
-              name: postgres-app
-              key: password
-        - name: SNOW_URL
-          valueFrom:
-            secretKeyRef:
-              name: servicenow-creds
-              key: SNOW_URL
-        - name: SNOW_USER
-          valueFrom:
-            secretKeyRef:
-              name: servicenow-creds
-              key: SNOW_USER
-        - name: SNOW_PASS
-          valueFrom:
-            secretKeyRef:
-              name: servicenow-creds
-              key: SNOW_PASS
         - name: UPTIME_KUMA_API_KEY
           valueFrom:
             secretKeyRef:
               name: uptimekuma-creds
               key: UPTIME_KUMA_API_KEY
-        - name: DB_HOST
-          value: "postgres-pooler-rw:5432"
-        - name: DB_NAME
-          value: "appdb"
         securityContext:
           runAsNonRoot: true
           runAsUser: 65534
@@ -1235,15 +863,7 @@ spec:
         - name: metrics-script
           mountPath: /app
           readOnly: true
-        - name: deps
-          mountPath: /deps
-        - name: metrics-tmp
-          mountPath: /tmp
       volumes:
-      - name: deps
-        emptyDir: {}
-      - name: metrics-tmp
-        emptyDir: {}
       - name: nginx-config
         configMap:
           name: doom-dashboard-nginx
