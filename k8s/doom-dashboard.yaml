@@ -359,7 +359,7 @@ data:
     <html lang="en">
     <head>
       <meta charset="UTF-8">
-      <title>doom.hl0.dev — ops center</title>
+      <title>doom dashboard</title>
       <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#128128;</text></svg>">
       <style>
         *{margin:0;padding:0;box-sizing:border-box}
@@ -485,7 +485,7 @@ data:
     </head>
     <body>
     <header>
-      <div class="h-logo">&#9760; DOOM &mdash; OPS CENTER</div>
+      <div class="h-logo">&#9760; DOOM DASHBOARD</div>
       <div class="h-right">
         <span><span class="dot init" id="dot"></span><span id="sts">INIT</span></span>
         <span id="ts">&mdash;</span>
