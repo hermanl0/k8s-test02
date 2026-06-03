@@ -9,6 +9,9 @@ data:
         listen 8080;
         server_name _;
         server_tokens off;
+        # Stray static probes (favicon variants, apple-touch icons, scanners) hit
+        # paths that don't exist. Don't log them as errors — they're not ours to fix.
+        log_not_found off;
 
         add_header X-Content-Type-Options "nosniff" always;
         add_header X-Frame-Options "SAMEORIGIN" always;
