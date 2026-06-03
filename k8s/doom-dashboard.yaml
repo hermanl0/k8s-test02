@@ -584,7 +584,7 @@ data:
       <div class="col">
         <div class="sec">
           <details class="hz-details" id="hz-details">
-            <summary class="hz-summary">&#9888; click here to be judged</summary>
+            <summary class="hz-summary">&#9888; click here to be judged &#9888;</summary>
             <div class="hz-wrap"><span class="hz-val" id="hz-val">&mdash;</span><span class="hz-unit">Hz</span></div>
             <div class="hz-verdict" id="hz-verdict">measuring&hellip;</div>
           </details>
