@@ -34,6 +34,11 @@ spec:
       labels:
         app: minio
     spec:
+      tolerations:
+      - key: kubernetes.azure.com/scalesetpriority
+        operator: Equal
+        value: spot
+        effect: NoSchedule
       securityContext:
         seccompProfile:
           type: RuntimeDefault
@@ -132,6 +137,11 @@ spec:
         app: minio
     spec:
       restartPolicy: OnFailure
+      tolerations:
+      - key: kubernetes.azure.com/scalesetpriority
+        operator: Equal
+        value: spot
+        effect: NoSchedule
       initContainers:
         - name: wait-for-minio
           image: curlimages/curl:latest

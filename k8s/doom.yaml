@@ -13,6 +13,11 @@ spec:
       labels:
         app: doom
     spec:
+      tolerations:
+      - key: kubernetes.azure.com/scalesetpriority
+        operator: Equal
+        value: spot
+        effect: NoSchedule
       securityContext:
         seccompProfile:
           type: RuntimeDefault

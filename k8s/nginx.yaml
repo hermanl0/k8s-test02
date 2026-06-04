@@ -41,6 +41,11 @@ spec:
       labels:
         app: nginx
     spec:
+      tolerations:
+      - key: kubernetes.azure.com/scalesetpriority
+        operator: Equal
+        value: spot
+        effect: NoSchedule
       securityContext:
         seccompProfile:
           type: RuntimeDefault

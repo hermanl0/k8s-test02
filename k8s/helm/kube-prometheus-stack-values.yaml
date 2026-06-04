@@ -1,4 +1,9 @@
 grafana:
+  tolerations:
+  - key: kubernetes.azure.com/scalesetpriority
+    operator: Equal
+    value: spot
+    effect: NoSchedule
   service:
     type: ClusterIP
   persistence:
@@ -64,6 +69,11 @@ grafana:
 
 prometheus:
   prometheusSpec:
+    tolerations:
+    - key: kubernetes.azure.com/scalesetpriority
+      operator: Equal
+      value: spot
+      effect: NoSchedule
     retention: 7d
     resources:
       requests:
@@ -90,6 +100,11 @@ nodeExporter:
 prometheus-node-exporter:
   extraArgs:
     - --no-collector.infiniband
+  tolerations:
+  - key: kubernetes.azure.com/scalesetpriority
+    operator: Equal
+    value: spot
+    effect: NoSchedule
 
 kubeStateMetrics:
   enabled: true

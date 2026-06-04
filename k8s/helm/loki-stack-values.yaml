@@ -1,5 +1,10 @@
 loki:
   enabled: true
+  tolerations:
+  - key: kubernetes.azure.com/scalesetpriority
+    operator: Equal
+    value: spot
+    effect: NoSchedule
   persistence:
     enabled: true
     storageClassName: managed-csi
@@ -14,6 +19,11 @@ loki:
 
 promtail:
   enabled: true
+  tolerations:
+  - key: kubernetes.azure.com/scalesetpriority
+    operator: Equal
+    value: spot
+    effect: NoSchedule
   resources:
     requests:
       cpu: 50m

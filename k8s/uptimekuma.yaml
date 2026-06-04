@@ -27,6 +27,11 @@ spec:
       labels:
         app: uptimekuma
     spec:
+      tolerations:
+      - key: kubernetes.azure.com/scalesetpriority
+        operator: Equal
+        value: spot
+        effect: NoSchedule
       # uptime-kuma uses setpriv to drop to the node user at startup — the
       # RuntimeDefault seccomp profile blocks a syscall Node.js needs.
       # Mitigated by ClusterIP-only exposure and NetworkPolicy.

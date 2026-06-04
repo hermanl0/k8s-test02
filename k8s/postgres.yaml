@@ -8,6 +8,14 @@ spec:
   instances: 3
   imageName: ghcr.io/cloudnative-pg/postgresql:16
 
+  # Allow Postgres pods onto the spot node pool.
+  affinity:
+    tolerations:
+    - key: kubernetes.azure.com/scalesetpriority
+      operator: Equal
+      value: spot
+      effect: NoSchedule
+
   storage:
     size: 5Gi
     storageClass: managed-csi

@@ -25,6 +25,11 @@ spec:
       default_pool_size: "20"
   template:
     spec:
+      tolerations:
+      - key: kubernetes.azure.com/scalesetpriority
+        operator: Equal
+        value: spot
+        effect: NoSchedule
       containers:
       - name: pgbouncer
         resources:
