@@ -12,7 +12,7 @@ Personal Kubernetes lab on Azure — live at **[doom.hl0.dev](https://doom.hl0.d
 
 | Weapon | What it does |
 |--------|--------------|
-| **AKS** (2 × Standard_D2s_v6) | Runs the cluster |
+| **AKS** (1× B2s_v2 system + 1× D2s_v6 **spot**) | Runs the cluster — spot node carries the workloads to cut cost; cert-manager/NGF stay on the regular node |
 | **NGINX Gateway Fabric** | Gateway API ingress — HTTP→HTTPS redirect, TLS termination |
 | **cert-manager** | Automatic Let's Encrypt TLS via Cloudflare DNS-01 |
 | **CloudNativePG** | 3-instance PostgreSQL 16 HA cluster (1 primary, 2 replicas) |
