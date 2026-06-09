@@ -90,6 +90,10 @@ jobs:
 
       - name: Apply database manifests
         run: |
+          # A Job's pod template is immutable, so re-applying minio.yaml fails if the
+          # one-shot bucket job already exists. Delete it first; it's idempotent
+          # (mc mb --ignore-existing) and recreated by the apply below.
+          kubectl delete job minio-create-bucket -n lab --ignore-not-found
           kubectl apply -f k8s/minio.yaml
           kubectl apply -f k8s/postgres.yaml
           # Wait for the cluster primary before configuring Pooler auth
